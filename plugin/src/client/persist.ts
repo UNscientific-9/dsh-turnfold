@@ -20,21 +20,30 @@ export interface CollapsePersistence {
   write(map: PersistedMap): void;
 }
 
-/** Tolerant storage adapter: quota/privacy-mode errors degrade to a no-op. */
+/** Tolerant storage adapter: quota/privacy-mode errors degrade to a no-op.
+ *  A module-lifetime MEMORY layer sits in front of storage: `write` always
+ *  lands in memory (so the store behaves identically even when setItem
+ *  throws — quota, private mode), and `read` serves the cache once warm.
+ *  Without it, a failed write silently lost every decision and the fold
+ *  state flipped back to "no decision" on the very next read. */
 export function createStoragePersistence(storage: Storage | undefined): CollapsePersistence {
+  let cache: PersistedMap | undefined;
   return {
     read(): PersistedMap {
+      if (cache !== undefined) return cache;
       if (storage === undefined) return {};
       try {
         const raw = storage.getItem(STORAGE_KEY);
         if (raw === null) return {};
         const parsed: unknown = JSON.parse(raw);
-        return isPersistedMap(parsed) ? parsed : {};
+        cache = isPersistedMap(parsed) ? parsed : {};
+        return cache;
       } catch {
         return {};
       }
     },
     write(map: PersistedMap): void {
+      cache = map;
       if (storage === undefined) return;
       try {
         storage.setItem(STORAGE_KEY, JSON.stringify(map));

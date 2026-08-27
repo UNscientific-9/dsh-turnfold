@@ -840,6 +840,7 @@ export function createProjector(
   const applyAll = (compensate: boolean): void => {
     const columns = document.querySelectorAll<HTMLElement>('[data-chat-flow]');
     if (columns.length === 0) return;
+    const diagReports: Record<string, unknown>[] = [];
     const debugEnabled =
       typeof localStorage !== 'undefined' &&
       localStorage.getItem('dsh.turn-collapse.debug') === '1';
@@ -858,6 +859,7 @@ export function createProjector(
         if (debugEnabled) {
           debugReports.push({ flow: column.getAttribute('data-chat-flow') ?? '?', summaries: domSummaries.size, hiddenRows: 0, unowned: [], note: 'no column session' });
         }
+        diagReports.push({ flow: column.getAttribute('data-chat-flow') ?? '?', note: 'no column session', real: domSummaries.size, synth: [] });
         continue;
       }
       const columnSessionId = ownerSessionId;
@@ -867,6 +869,7 @@ export function createProjector(
         if (debugEnabled) {
           debugReports.push({ flow: column.getAttribute('data-chat-flow') ?? '?', summaries: 0, hiddenRows: 0, unowned: [] });
         }
+        diagReports.push({ flow: column.getAttribute('data-chat-flow') ?? '?', session: columnSessionId, real: domSummaries.size, synth: [] });
         continue;
       }
       // Synthesized fold bars: default-collapse once (user-approved policy),
@@ -883,6 +886,11 @@ export function createProjector(
           synth,
           (turn) => store.getCollapsed(columnSessionId, turn) === 'collapsed',
           (turn, nextCollapsed) => {
+            // Persist the decision BEFORE applying it: the store is the
+            // reconcile source of truth, and without a write the next
+            // reconcile pass would roll the toggle back to whatever stale
+            // decision (or default) it finds there.
+            store.setCollapsed(columnSessionId, turn, nextCollapsed ? 'collapsed' : 'expanded');
             applyCollapse(columnSessionId, turn, nextCollapsed, { userDriven: true });
           },
         );
@@ -905,10 +913,24 @@ export function createProjector(
           unowned,
         });
       }
+      diagReports.push({
+        flow: column.getAttribute('data-chat-flow') ?? '?',
+        session: columnSessionId,
+        real: domSummaries.size,
+        synth: [...synth.keys()],
+        decisions: summaries.size > 0
+          ? Object.fromEntries([...summaries.keys()].map((t) => [t, store.getCollapsed(columnSessionId, t) ?? 'undecided']))
+          : {},
+      });
       applyPlan(column, scrollerOf(column), rows, summaries, isCollapsed, compensate, null);
     }
     if (debugEnabled && debugReports.length > 0) {
       console.info('[dsh.turn-collapse] reconcile', { flowCount: columns.length, perColumn: debugReports });
+    }
+    // DOM-readable diagnostics: the deploy probe reads this via getAttribute.
+    const bulk = document.getElementById('dsh-ta-bulk-controls');
+    if (bulk !== null) {
+      bulk.dataset.dshTaDiag = JSON.stringify(diagReports);
     }
   };
 
@@ -974,6 +996,16 @@ export function createProjector(
       return;
     }
     applyPlan(column, scrollerOf(column), rows, summaries, isCollapsed, true, null);
+  };
+  /** Error-visible variant: a thrown toggle must show up in the DOM probe. */
+  const applyCollapseVisible: typeof applyCollapse = (...args) => {
+    try {
+      return applyCollapse(...args);
+    } catch (error) {
+      const bulk = document.getElementById('dsh-ta-bulk-controls');
+      if (bulk !== null) bulk.dataset.dshTaError = String(error);
+      throw error;
+    }
   };
 
   return {

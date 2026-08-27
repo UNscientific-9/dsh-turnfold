@@ -125,11 +125,16 @@ export const TURN_ACTIVITY_CSS = `
 export const CSS_TAG_ID = '@dsh-plan/turn-collapse/styles';
 
 /** Inject the stylesheet once; idempotent across HMR / plugin restarts. */
-export function ensureStyles(document: Document): void {
-  if (document.querySelector(`style[data-plugin-css="${CSS_TAG_ID}"]`) !== null) return;
+export function ensureStyles(document: Document, version = ''): void {
+  const existing = document.querySelector(`style[data-plugin-css="${CSS_TAG_ID}"]`);
+  if (existing !== null) {
+    if (version !== '') (existing as HTMLElement).dataset.pluginVersion = version;
+    return;
+  }
   const tag = document.createElement('style');
   tag.dataset.plugin = '@dsh-plan/turn-collapse';
   tag.dataset.pluginCss = CSS_TAG_ID;
   tag.textContent = TURN_ACTIVITY_CSS;
+  if (version !== '') tag.dataset.pluginVersion = version;
   document.head.appendChild(tag);
 }

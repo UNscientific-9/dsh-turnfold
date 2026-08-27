@@ -132,6 +132,15 @@ export const TurnActivityNodeView = memo(function TurnActivityNodeView({
   }, [sessionId, summary]);
 
   const toggle = (): void => {
+    try {
+      toggleInner();
+    } catch (error) {
+      const bulk = document.getElementById('dsh-ta-bulk-controls');
+      if (bulk !== null) bulk.dataset.dshTaError = String(error);
+      throw error;
+    }
+  };
+  const toggleInner = (): void => {
     const next = collapsed ? 'expanded' : 'collapsed';
     getStore().setCollapsed(sessionId, summary.turn, next);
     // Apply synchronously for immediate visual feedback. `userDriven` asks

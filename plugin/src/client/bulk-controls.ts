@@ -42,4 +42,13 @@ export function ensureBulkControls(
     doc.body.appendChild(root);
   }
   root.style.display = hasFolds() ? '' : 'none';
+  // Visibility must track the conversation lifecycle, not just store events
+  // (the first summary bar can appear without a store write). A 1s poll is
+  // negligible and keeps the chip honest after window-cut swaps.
+  if (!root.dataset.dshTaPolling) {
+    root.dataset.dshTaPolling = '1';
+    doc.defaultView?.setInterval(() => {
+      root.style.display = hasFolds() ? '' : 'none';
+    }, 1000);
+  }
 }

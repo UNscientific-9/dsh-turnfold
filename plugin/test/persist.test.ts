@@ -55,11 +55,13 @@ test('corrupt storage degrades to empty', () => {
   assert.deepEqual(persistence.read(), {});
 });
 
-test('persistence tolerates unavailable storage', () => {
+test('persistence tolerates unavailable storage (in-memory fallback)', () => {
   const persistence = createStoragePersistence(undefined);
   assert.deepEqual(persistence.read(), {});
   persistence.write(withPersistedTurn(persistence, 's', 1, 'collapsed'));
-  assert.deepEqual(persistence.read(), {});
+  // The memory layer keeps the decision for this page even when setItem is
+  // impossible — folding must not flip back to undecided on the next read.
+  assert.deepEqual(persistence.read(), { s: { '1': 'collapsed' } });
 });
 
 test('store notifies subscribers on change', () => {
