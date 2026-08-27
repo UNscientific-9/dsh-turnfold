@@ -2,7 +2,7 @@
  * 行应用：把分类结果写到真实行上——只动 `data-dsh-ta-collapsed` 属性，
  * 由 styles.ts 的 CSS 规则决定显隐；从不猜 inline style 或宿主类。
  */
-import type { RowWithElement } from './row-membership.ts';
+import type { RowWithElement } from './types.ts';
 
 export interface CollapseMarkerRow {
   readonly key: string;

@@ -26,7 +26,10 @@ export function getStore(): CollapseStore {
 }
 
 export function getProjector(): TurnActivityProjector {
-  projector ??= createProjector(document, getStore());
+  // readSessionId 由本模块注入：projector-core 不 import singletons（依赖
+  // 方向单向 singletons → projector-core，无模块环）。注入发生在闭包
+  // 创建时，后续 setCurrentSessionReader 的更新通过函数引用即时生效。
+  projector ??= createProjector(document, getStore(), undefined, undefined, readCurrentSessionId);
   return projector;
 }
 

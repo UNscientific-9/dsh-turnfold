@@ -3,7 +3,7 @@
  * 写入、无 store 访问（只通过注入的 `isCollapsed` 谓词读决策）。
  */
 import { parseChatRowKey } from './row-keys.ts';
-import type { RowWithElement, SummaryRef } from './row-membership.ts';
+import type { RowWithElement, SummaryRef } from './types.ts';
 
 const ASSISTANT_ID = /^(\d+):(\d+)$/;
 

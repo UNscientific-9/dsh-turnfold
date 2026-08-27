@@ -14,7 +14,7 @@
  *   follow 逻辑打架。
  */
 import { beginAnimatedTransition } from './animate.ts';
-import type { RowWithElement, SummaryRef } from './row-membership.ts';
+import type { RowWithElement, SummaryRef } from './types.ts';
 import { applyFinalThinkMarkers, computeRowTargets } from './row-classify.ts';
 import { applyRowTargets } from './row-apply.ts';
 import { flowTop, isAtBottom, pickAnchor } from './scroll.ts';

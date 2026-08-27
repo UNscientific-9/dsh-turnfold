@@ -16,8 +16,8 @@
  * view re-renders summaries frequently and each render re-records facts.
  */
 // type-only：运行时 row-membership 依赖本模块（readMembershipMap /
-// recordMembershipForPersist），类型反向引用不会形成运行时环。
-import type { SummaryRef } from './row-membership.ts';
+// recordMembershipForPersist），类型从零依赖的 types.ts 引入，不形成环。
+import type { SummaryRef } from './types.ts';
 
 export const MEMBERSHIP_STORAGE_KEY = 'dsh.turn-collapse.membership.v1';
 

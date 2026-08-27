@@ -17,34 +17,11 @@ import {
   DATA_TOOLS,
   DATA_TURN,
 } from './constants.ts';
+import type { RowWithElement, SummaryRef } from './types.ts';
 
-export interface RowDescriptor {
-  /** `data-chat-anchor-key` value (`conversationContextKey(kind, id)`). */
-  readonly key: string;
-  /** `data-chat-flow-kind` value; informational fallback only. */
-  readonly kind: string | undefined;
-}
-
-/** A described row bound to its live element. */
-export interface RowWithElement extends RowDescriptor {
-  readonly element: HTMLElement;
-}
-
-/** Membership facts for one completed turn, mirroring the node data the view
- *  renders into `data-dsh-ta-*`. */
-export interface SummaryRef {
-  readonly turn: number;
-  readonly finalStep: number | undefined;
-  readonly toolCallIds: readonly string[];
-  /** Correlated `llm/retry` ids; `model-retry` rows keyed by these ids are
-   *  hidden together with the turn's activity. */
-  readonly retryIds: readonly string[];
-  /** The session this summary row was rendered for; read from the DOM so
-   *  the projector never re-derives session ownership and so two `data-chat-flow`
-   *  columns rendered for different sessions can each apply their own store
-   *  decisions without cross-contamination. */
-  readonly sessionId: string | undefined;
-}
+// 共享类型定义在 types.ts（零依赖，type-only 引用，不形成模块环）；
+// 此处 re-export 维持旧导入路径（外部统一经 projector.ts facade）。
+export type { RowDescriptor, RowWithElement, SummaryRef } from './types.ts';
 
 /** Read membership facts off the rendered summary rows. */
 export function collectSummaries(column: ParentNode): ReadonlyMap<number, SummaryRef> {

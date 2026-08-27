@@ -1,7 +1,7 @@
 /**
  * 滚动：滚动容器探测、行描述、锚点/视口几何。全部纯函数，无模块级状态。
  */
-import type { RowWithElement } from './row-membership.ts';
+import type { RowWithElement } from './types.ts';
 
 /**
  * The chat scroller: same rule as the conversation view
