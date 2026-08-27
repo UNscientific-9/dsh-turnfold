@@ -161,3 +161,5 @@ ScrollAnchor（用户 toggle：展开定位到该轮第一个活动行、折叠�
 12. **点击响应性能（v0.2.7）**：行归属索引化（tool-call/model-retry 按
     id→turn 反向索引，O(行数×轮数) → O(行数)）；折叠动画批量测量
     （先统一读 offsetHeight 一次 layout，再统一写样式，N 次 → 2 次）。
+    任何后续批量 DOM 读写都必须先全部读完再开始写——读后立即写会强制
+    每次 layout pass，正好复现"点击折叠后延迟"。

@@ -4,7 +4,7 @@ DSH Web 轮次折叠插件：agent 工作时，thinking / 工具调用 / 中间�
 
 - 纯前端插件，不改 DSH 后端与会话存储，卸载无残留
 - 兼容：**DSH 0.1.1-rc.2 系列**（`@deepseek-ai/dsh-client-runtime` / `dsh-client-ui-conversation` / `dsh-session` 同版本）
-- 当前版本：**0.2.7**
+- 当前版本：**0.2.8**
 
 ## 效果
 
@@ -28,7 +28,7 @@ DSH Web 轮次折叠插件：agent 工作时，thinking / 工具调用 / 中间�
 | 状态持久化 | 折叠/展开选择存 localStorage，刷新、重开会话后恢复；早期轮次的折叠状态也会被记住（成员快照） |
 | 位置正确 | 折叠条固定渲染在**用户消息下方、该轮回复正文上方**（0.2.6 锚点修复） |
 
-## 安装（拿到 `dsh-plan-turn-collapse-0.2.7.tgz` 后）
+## 安装（拿到 `dsh-plan-turn-collapse-0.2.8.tgz` 后）
 
 ### 前提
 
@@ -37,7 +37,7 @@ DSH Web 轮次折叠插件：agent 工作时，thinking / 工具调用 / 中间�
 
 ### 步骤
 
-1. 把 `dsh-plan-turn-collapse-0.2.7.tgz` 放到一个**固定目录**（路径不要带空格，例如 `D:\deps\` 或项目目录下），记下它的完整路径。
+1. 把 `dsh-plan-turn-collapse-0.2.8.tgz` 放到一个**固定目录**（路径不要带空格，例如 `D:\deps\` 或项目目录下），记下它的完整路径。
 
 2. 编辑 DSH web profile 的依赖文件：
    `%USERPROFILE%\.dsh\profiles\web\package.json`
@@ -46,7 +46,7 @@ DSH Web 轮次折叠插件：agent 工作时，thinking / 工具调用 / 中间�
    ```json
    {
      "dependencies": {
-       "@dsh-plan/turn-collapse": "file:D:/deps/dsh-plan-turn-collapse-0.2.7.tgz"
+       "@dsh-plan/turn-collapse": "file:D:/deps/dsh-plan-turn-collapse-0.2.8.tgz"
      }
    }
    ```
@@ -66,7 +66,7 @@ DSH Web 轮次折叠插件：agent 工作时，thinking / 工具调用 / 中间�
 
 ### 确认装上了
 
-- 浏览器控制台（F12 → Console）出现：`[dsh.turn-collapse] v0.2.7 loaded`
+- 浏览器控制台（F12 → Console）出现：`[dsh.turn-collapse] v0.2.8 loaded`
 - 打开任意一个已完成会话：用户消息下方出现 `本轮用时 …` 折叠条；正常完成的轮次默认为折叠态
 
 ## 使用
@@ -87,7 +87,7 @@ DSH Web 轮次折叠插件：agent 工作时，thinking / 工具调用 / 中间�
 
 | 现象 | 处理 |
 |---|---|
-| 折叠条在用户消息**上方** | 装的是旧版 bundle；确认步骤 4/5（重启 + 硬刷新），Console 里应是 v0.2.7 |
+| 折叠条在用户消息**上方** | 装的是旧版 bundle；确认步骤 4/5（重启 + 硬刷新），Console 里应是 v0.2.8 |
 | 点击折叠条没反应 | 先硬刷新；确认没有其他脚本遮挡；仍不行就把 Console 报错发给维护者 |
 | 早期轮次没有折叠条 | 往上滚动触发自动加载，稍等片刻（连续加载会逐步加速，最多约 1 秒间隔），旧轮次会补上折叠条 |
 | 不想自动加载历史 | 浏览器控制台执行 `localStorage.setItem('dsh.turn-collapse.autoLoad', '0')` 后刷新 |
@@ -125,6 +125,7 @@ test/                    node:test 单元测试（57 个用例）
 
 ## 版本历史
 
-- **0.2.7**：点击折叠条响应提速（行归属索引化 + 折叠动画批量测量，消除点击后延迟）；移除右下角「全部折叠/全部展开」浮动按钮（与侧边栏插件冲突）；折叠后最终回答行内的思考摘要（最后一条 thinking）一并隐藏，展开恢复
+- **0.2.8**：simplify — `applyFinalThinkMarkers` 去掉无用的 boolean 返回；`beginAnimatedTransition` 改用 `heights.entries()` 迭代，移除 fold 分支不可达 `?? '0px'` 与 unfold 分支会强制二次 layout 的 `?? \`${el.offsetHeight}px\``；删除与 `:hover` 同色的冗余 `.dsh-ta-toggle:active` 规则；`docs/architecture.md` 决策 12 补"read→write"通用规则；README 补 DOM 探针迁移说明
+- **0.2.7**：点击折叠条响应提速（行归属索引化 + 折叠动画批量测量，消除点击后延迟）；移除右下角「全部折叠/全部展开」浮动按钮（与侧边栏插件冲突）；折叠后最终回答行内的思考摘要（最后一条 thinking）一并隐藏，展开恢复；0.2.6 在 `dsh-ta-bulk-controls` 根上挂的 `dshTaDiag` / `dshTaError` DOM 探针随浮动按钮一起移除，deploy 脚本改用 `localStorage['dsh.turn-collapse.debug']='1'` 触发同等的 `console.info('[dsh.turn-collapse] reconcile', ...)` 诊断输出
 - **0.2.6**：合成折叠条点击时先写 store 再折叠（修复点击被旧决策回滚的问题）；样式标签带版本号；折叠决策持久化加内存缓存层（写入失败不丢状态）
 - **0.2.0~0.2.5**：折叠条锚点修复（固定在用户消息下方）；长会话被窗口切掉的轮次生成合成折叠条；滚动近顶自动加载更早；成员快照持久化；全局一键折叠/展开；纯窗口裁剪列不再被整列跳过

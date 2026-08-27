@@ -375,18 +375,15 @@ export function applyFinalThinkMarkers(
   rows: readonly RowWithElement[],
   summaries: ReadonlyMap<number, SummaryRef>,
   isCollapsed: (turn: number) => boolean,
-): boolean {
-  let changed = false;
+): void {
   for (const row of rows) {
     const want = isFinalThinkRow(row, summaries, isCollapsed);
     const has = row.element.dataset.dshTaFinalCollapsed === 'true';
     if (want !== has) {
       if (want) row.element.dataset.dshTaFinalCollapsed = 'true';
       else delete row.element.dataset.dshTaFinalCollapsed;
-      changed = true;
     }
   }
-  return changed;
 }
 
 /** Current visual state of one row, read by the applying layer. */
@@ -579,9 +576,9 @@ function beginAnimatedTransition(
     // while one batched read costs a single pass.
     const heights = new Map<HTMLElement, string>();
     for (const el of els) heights.set(el, `${el.offsetHeight}px`);
-    for (const el of els) {
+    for (const [el, height] of heights) {
       el.classList.add('dsh-ta-animating');
-      el.style.height = heights.get(el) ?? '0px';
+      el.style.height = height;
       el.style.marginBottom = '0px';
       el.style.opacity = '1';
     }
@@ -607,8 +604,8 @@ function beginAnimatedTransition(
       el.style.opacity = '0';
     }
     void documentRef.body.offsetHeight;
-    for (const el of els) {
-      el.style.height = heights.get(el) ?? `${el.offsetHeight}px`;
+    for (const [el, height] of heights) {
+      el.style.height = height;
       el.style.marginBottom = '0px';
       el.style.opacity = '1';
     }

@@ -36,11 +36,6 @@ export const TURN_ACTIVITY_CSS = `
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-interactive-bg-hover-solid);
 }
-/* Click feedback: darken the chip the moment the pointer goes down, so the
- * toggle answers the click before the fold animation starts. */
-.dsh-ta-toggle:active {
-  background: var(--dsw-alias-interactive-bg-hover-solid);
-}
 .dsh-ta-toggle:focus-visible {
   outline: none;
   box-shadow: inset 0 0 0 2px var(--dsw-alias-border-l3);
