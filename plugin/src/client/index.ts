@@ -12,7 +12,7 @@ import { ensureBulkControls } from './bulk-controls.ts';
 import { TURN_ACTIVITY_KIND } from './activity-state.ts';
 import { en, NS, zh } from './locales.ts';
 import { hydrateMembership } from './projector.ts';
-import { getProjector, getStore } from './singletons.ts';
+import { getProjector, getStore, setCurrentSessionReader } from './singletons.ts';
 import { ensureStyles } from './styles.ts';
 import { TurnActivityNodeView } from './summary-view.tsx';
 import { createTurnActivityDefinition } from './turn-activity.ts';
@@ -22,7 +22,7 @@ export const inject = ['slots', 'locale', 'conversationEvents'];
 
 /** Bumped with every shipped change: shows up once in the browser console
  *  so a stale bundle (DSH serves the pnpm-installed copy) is obvious. */
-export const CLIENT_VERSION = '0.2.0';
+export const CLIENT_VERSION = '0.2.1';
 
 export function apply(ctx: Context): void {
   // One-shot load marker: makes "which bundle is the browser running"
@@ -49,10 +49,21 @@ export function apply(ctx: Context): void {
 
   // Auto-load-older rides the host sessions service; if it is not mounted
   // yet (boot order), auto-load degrades to off until the next plugin mount.
+  // The same service reports the CURRENT session id (its selection snapshot
+  // store), which the projector falls back to when a column renders no real
+  // summary row at all (window-cut turns only).
   try {
-    setAutoLoadSessions(ctx.get('sessions') as unknown as AutoLoadSessions);
+    const sessions = ctx.get('sessions') as unknown as {
+      selection?: { getSnapshot?: () => { sessionId?: string } };
+    } & AutoLoadSessions;
+    setAutoLoadSessions(sessions);
+    setCurrentSessionReader(() => {
+      const id = sessions.selection?.getSnapshot?.().sessionId;
+      return typeof id === 'string' && id !== '' ? id : null;
+    });
   } catch {
     setAutoLoadSessions(undefined);
+    setCurrentSessionReader(() => null);
   }
 
   ctx.effect(

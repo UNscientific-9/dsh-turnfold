@@ -18,6 +18,7 @@ import { parseChatRowKey } from './row-keys.ts';
 import { computeSyntheticSummaries, synthLabel, type SynthesizedSummary } from './synth.ts';
 import type { CollapseStore } from './store.ts';
 import { readMembershipMap, recordMembershipForPersist } from './membership-persist.ts';
+import { readCurrentSessionId } from './singletons.ts';
 
 export interface RowDescriptor {
   /** `data-chat-anchor-key` value (`conversationContextKey(kind, id)`). */
@@ -852,7 +853,7 @@ export function createProjector(
       // at least one DOM summary (or the projector session fallback) to know
       // which session's cache applies.
       const domSummaries = collectSummaries(column);
-      const ownerSessionId = pickColumnSessionId(domSummaries) ?? sessionId;
+      const ownerSessionId = pickColumnSessionId(domSummaries) ?? sessionId ?? readCurrentSessionId();
       if (ownerSessionId === null) {
         if (debugEnabled) {
           debugReports.push({ flow: column.getAttribute('data-chat-flow') ?? '?', summaries: domSummaries.size, hiddenRows: 0, unowned: [], note: 'no column session' });
@@ -951,7 +952,7 @@ export function createProjector(
     // left the document (paged history) or never existed (window-cut turn).
     const rows = describeRows(column);
     const domSummaries = collectSummaries(column);
-    const ownerFromDom = pickColumnSessionId(domSummaries) ?? session;
+    const ownerFromDom = pickColumnSessionId(domSummaries) ?? session ?? readCurrentSessionId();
     const { summaries } = resolveColumnSummaries(column, rows, ownerFromDom);
     if (!summaries.has(turn)) return; // summary facts not available yet
     // Prefer the row's own session (multi-column truth) over the caller's
@@ -1031,7 +1032,7 @@ export function createProjector(
       const columns = document.querySelectorAll<HTMLElement>('[data-chat-flow]');
       for (const column of columns) {
         const domSummaries = collectSummaries(column);
-        const ownerSessionId = pickColumnSessionId(domSummaries) ?? sessionId;
+        const ownerSessionId = pickColumnSessionId(domSummaries) ?? sessionId ?? readCurrentSessionId();
         if (ownerSessionId === null) continue;
         const rows = describeRows(column);
         const { summaries } = resolveColumnSummaries(column, rows, ownerSessionId);

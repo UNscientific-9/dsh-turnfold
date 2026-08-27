@@ -30,6 +30,29 @@ export function getProjector(): TurnActivityProjector {
   return projector;
 }
 
+/**
+ * Reader for the host's CURRENT session id. The chat view normally reports
+ * it via `projector.setSession` (the summary view's effect), but a
+ * window-cut column can render zero real summary rows — then the
+ * projector's session fallback stays null and the whole column would be
+ * skipped. The host sessions service exposes the current selection as a
+ * snapshot store (`sessions.selection.getSnapshot().sessionId`); index.ts
+ * injects a reader over it at mount. Returns null when unavailable.
+ */
+let currentSessionReader: () => string | null = () => null;
+
+export function setCurrentSessionReader(reader: () => string | null): void {
+  currentSessionReader = reader;
+}
+
+export function readCurrentSessionId(): string | null {
+  try {
+    return currentSessionReader();
+  } catch {
+    return null;
+  }
+}
+
 export function startProjector(): void {
   getProjector().start();
 }
