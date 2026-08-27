@@ -59,6 +59,13 @@ test('older turns stay foldable via membership snapshot', async ({ page }) => {
       finalRow.className = 'final-answer';
       finalRow.textContent = `final ${t}`;
       flow.appendChild(finalRow);
+      // DSH renders a `turn-tail` row when a turn closes; synth.ts needs it
+      // to treat the turn as FINISHED before offering a synthetic fold bar
+      // (a running turn is never default-collapsed).
+      const tail = document.createElement('div');
+      tail.setAttribute('data-chat-anchor-key', `9:turn-tail${t}`);
+      tail.className = 'turn-tail';
+      flow.appendChild(tail);
     }
     scroller.appendChild(flow);
   });

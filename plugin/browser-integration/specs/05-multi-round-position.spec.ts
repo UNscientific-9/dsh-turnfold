@@ -45,6 +45,20 @@ test('collapsing one turn does not move its neighbours', async ({ page }) => {
       };
     });
 
+  // Park the toggle inside the scrollport before measuring: Playwright's
+  // click actionability check scrolls the element into view itself, and that
+  // would shift every measurement we take. `block: 'nearest'` scrolls the
+  // minimum amount needed to bring the button in.
+  await page.evaluate(() => {
+    document
+      .querySelector<HTMLElement>('.dsh-ta-root[data-dsh-ta-turn="2"] .dsh-ta-toggle')
+      ?.scrollIntoView({ block: 'nearest' });
+  });
+  const scrollTopBefore = await page.evaluate(() => {
+    const s = document.querySelector<HTMLElement>('[data-conversation-scroll]');
+    return s?.scrollTop ?? 0;
+  });
+
   const before = await measure();
 
   // Collapse turn 2 (the one between turn 1 and turn 3).
@@ -62,10 +76,11 @@ test('collapsing one turn does not move its neighbours', async ({ page }) => {
   // that turn 1 didn't move and the scrollTop didn't change.
   expect(after.b1).toBe(before.b1);
 
-  // ScrollTop should also be unchanged for this scroll-stable toggle.
+  // ScrollTop should also be unchanged for this scroll-stable toggle (the
+  // projector never compensates a user-driven fold).
   const scrollTop = await page.evaluate(() => {
     const s = document.querySelector<HTMLElement>('[data-conversation-scroll]');
     return s?.scrollTop ?? 0;
   });
-  expect(scrollTop).toBe(0);
+  expect(scrollTop).toBe(scrollTopBefore);
 });

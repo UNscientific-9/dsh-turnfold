@@ -36,7 +36,14 @@ const MIME = {
 
 function resolveFile(pathname) {
   for (const { prefix, dir } of ROOTS) {
-    if (pathname === prefix || pathname.startsWith(prefix + '/')) {
+    // prefix === '/' 是兜底根：任何以 '/' 开头的路径都命中。不能写成
+    // pathname.startsWith(prefix + '/')——那要求 '//' 前缀，会把所有正常
+    // 路径（如 /chat.html）都漏成 404。
+    const matches =
+      prefix === '/'
+        ? pathname.startsWith('/')
+        : pathname === prefix || pathname.startsWith(prefix + '/');
+    if (matches) {
       const rel = pathname.slice(prefix.length) || '/';
       const candidate = normalize(join(dir, rel));
       const baseNorm = normalize(dir);

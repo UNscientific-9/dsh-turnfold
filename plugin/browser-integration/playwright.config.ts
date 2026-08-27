@@ -19,6 +19,7 @@ export default defineConfig({
   reporter: 'list',
   use: {
     headless: true,
+    channel: 'msedge', // 用本机已装的 Edge，避免下载 chromium
     baseURL: 'http://127.0.0.1:3100',
   },
   webServer: {

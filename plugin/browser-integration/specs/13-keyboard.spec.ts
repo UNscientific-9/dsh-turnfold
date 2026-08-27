@@ -13,7 +13,7 @@ import {
 test('Enter and Space on a focused toggle drive the fold path', async ({ page }) => {
   await bootstrapChat(page, 'chat.html');
 
-  const toggle = page.locator('.dsh-ta-toggle[data-dsh-ta-turn="2"]');
+  const toggle = page.locator('.dsh-ta-root[data-dsh-ta-turn="2"] .dsh-ta-toggle');
 
   // Turn 2 starts auto-collapsed (aria-expanded="false"). Pressing
   // Enter on a focused button should expand it.

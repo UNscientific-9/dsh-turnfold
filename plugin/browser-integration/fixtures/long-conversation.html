@@ -4,6 +4,10 @@
   <meta charset="utf-8" />
   <title>Long-conversation fixture: 1 turn, 100 tool calls</title>
   <style>
+    /* The DSH host styles every chat row with border-box sizing; without it
+       the projector's fold animation (`style.height = offsetHeight`) would
+       over-shoot by the row's padding and twitch at animation start. */
+    * { box-sizing: border-box; }
     body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: #fff; color: #111; }
     [data-conversation-scroll] { height: 80vh; overflow-y: auto; }
     [data-chat-anchor-key] { padding: 4px 14px; }
@@ -76,8 +80,9 @@
       root.setAttribute('data-dsh-ta-auto-collapse', 'true');
       const btn = document.createElement('button');
       btn.className = 'dsh-ta-toggle';
-      btn.setAttribute('data-dsh-ta-turn', String(TURN));
-      btn.setAttribute('data-dsh-ta-session', 'fixture-session');
+      // No data-dsh-ta-* on the button — the real DSH button is bare class
+      // + aria-expanded + title; a stray `data-dsh-ta-turn` here would be
+      // collected as a second summary row and blank the root's facts.
       btn.setAttribute('aria-expanded', 'false');
       const label = document.createElement('span');
       label.className = 'dsh-ta-label';

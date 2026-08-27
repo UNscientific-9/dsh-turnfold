@@ -52,7 +52,10 @@ function readTurnFromElement(el: Element): number | null {
 
 /** Replay the summary-view's first-mount auto-collapse effect. */
 function replayAutoCollapse(): void {
-  for (const el of document.querySelectorAll('[data-dsh-ta-turn]')) {
+  // Only summary ROOTS carry `data-dsh-ta-turn` (mirroring summary-view.tsx);
+  // the toggle button inside is deliberately bare, so `[data-dsh-ta-turn]`
+  // alone must never be used here — it would collect the buttons too.
+  for (const el of document.querySelectorAll<HTMLElement>('.dsh-ta-root[data-dsh-ta-turn]')) {
     const sessionId = readSessionIdFromElement(el);
     const turn = readTurnFromElement(el);
     if (turn === null) continue;
@@ -66,13 +69,18 @@ function replayAutoCollapse(): void {
 }
 
 function applyFromButton(btn: HTMLButtonElement, collapsed: boolean): void {
-  const sessionId = btn.getAttribute('data-dsh-ta-session') ?? 'fixture-session';
-  const turnText = btn.getAttribute('data-dsh-ta-turn');
-  if (turnText === null) return;
-  const turn = Number(turnText);
-  if (!Number.isFinite(turn)) return;
+  // The button carries no data-dsh-ta-* attributes (same as the real DSH
+  // view); the membership facts live on the summary root.
+  const root = btn.closest<HTMLElement>('.dsh-ta-root');
+  if (root === null) return;
+  const sessionId = readSessionIdFromElement(root);
+  const turn = readTurnFromElement(root);
+  if (turn === null) return;
   const state = collapsed ? 'collapsed' : 'expanded';
   store.setCollapsed(sessionId, turn, state);
+  // The real view's React render owns `aria-expanded`; this fixture has no
+  // React, so the button attribute is synced here to mirror that contract.
+  btn.setAttribute('aria-expanded', String(!collapsed));
   projector.applyTurnCollapse(sessionId, turn, collapsed, { userDriven: true });
 }
 
@@ -111,6 +119,20 @@ window.__dshTurnfold = {
   },
   setCollapsed: (sessionId, turn, state) => {
     store.setCollapsed(sessionId, turn, state);
+    // The real view's `useSyncExternalStore` subscription re-renders
+    // `aria-expanded` when the store changes; the fixture has no React, so
+    // sync every matching toggle here to keep click-direction semantics
+    // (`aria-expanded === 'false'` means collapsed) consistent with the
+    // store.
+    for (const root of document.querySelectorAll<HTMLElement>('.dsh-ta-root[data-dsh-ta-turn]')) {
+      if (
+        root.getAttribute('data-dsh-ta-session') === sessionId &&
+        Number(root.getAttribute('data-dsh-ta-turn')) === turn
+      ) {
+        const button = root.querySelector<HTMLButtonElement>('.dsh-ta-toggle');
+        button?.setAttribute('aria-expanded', String(state !== 'collapsed'));
+      }
+    }
   },
   getCollapsed: (sessionId, turn) => store.getCollapsed(sessionId, turn),
 };

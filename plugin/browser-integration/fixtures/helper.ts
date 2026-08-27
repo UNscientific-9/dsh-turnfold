@@ -62,9 +62,11 @@ export async function bootstrapChat(
   );
 }
 
-/** Click the toggle button for a given turn. */
+/** Click the toggle button for a given turn. The button itself carries no
+ *  `data-dsh-ta-*` attributes (mirroring summary-view.tsx); locate it via
+ *  the summary root's `data-dsh-ta-turn`. */
 export function toggleLocator(page: Page, turn: number): Locator {
-  return page.locator(`.dsh-ta-toggle[data-dsh-ta-turn="${turn}"]`);
+  return page.locator(`.dsh-ta-root[data-dsh-ta-turn="${turn}"] .dsh-ta-toggle`);
 }
 
 /** Click the toggle and return the new `aria-expanded` value. */
@@ -75,23 +77,27 @@ export async function clickToggle(page: Page, turn: number): Promise<boolean> {
   // For prefers-reduced-motion the change is synchronous; otherwise we
   // wait for the animation to settle before reading the attribute again.
   await waitForAnimationDone(page);
-  const after = await clickThenRead(page, locator, before);
+  const after = await clickThenRead(page, turn, before);
   return after === 'true';
 }
 
-async function clickThenRead(page: Page, locator: Locator, before: string | null): Promise<string> {
+async function clickThenRead(page: Page, turn: number, before: string | null): Promise<string> {
   // The fixture's click handler flips aria-expanded in the same frame the
   // projector applies its state. Re-read after a microtask + rAF.
   await page.waitForFunction(
     (args) => {
-      const el = document.querySelector(`.dsh-ta-toggle[data-dsh-ta-turn="${args.turn}"]`);
+      const el = document.querySelector(`.dsh-ta-root[data-dsh-ta-turn="${args.turn}"] .dsh-ta-toggle`);
       const after = el?.getAttribute('aria-expanded') ?? null;
       return after !== null && after !== args.before;
     },
-    { turn: Number(await locator.getAttribute('data-dsh-ta-turn')), before },
+    { turn, before },
     { timeout: 2_000 },
   );
-  return (await locator.getAttribute('aria-expanded')) ?? 'false';
+  return (
+    (await page
+      .locator(`.dsh-ta-root[data-dsh-ta-turn="${turn}"] .dsh-ta-toggle`)
+      .getAttribute('aria-expanded')) ?? 'false'
+  );
 }
 
 /** Wait until the projector has no row in the `dsh-ta-animating` class. */
@@ -111,7 +117,7 @@ export async function waitForToggleState(
 ): Promise<void> {
   await page.waitForFunction(
     (args) => {
-      const el = document.querySelector(`.dsh-ta-toggle[data-dsh-ta-turn="${args.turn}"]`);
+      const el = document.querySelector(`.dsh-ta-root[data-dsh-ta-turn="${args.turn}"] .dsh-ta-toggle`);
       return el?.getAttribute('aria-expanded') === args.expected;
     },
     { turn, expected },

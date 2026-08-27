@@ -21,10 +21,14 @@ From `plugin/`:
 
 ```bash
 npm install --ignore-scripts              # DSH sandbox disables postinstall
-npx playwright install chromium --with-deps   # one-time
 npm run build                              # produces lib/fixture.js
 npm run test:browser                       # 13 smoke specs
 ```
+
+The suite runs on the system-installed **Edge** (`channel: 'msedge'` in
+`playwright.config.ts`), so no browser download is needed. If Edge is
+unavailable on another machine, switch the `channel` to `'chrome'` or
+`'chromium'` (and run `npx playwright install chromium` once).
 
 `playwright.config.ts` starts a static file server on `127.0.0.1:3100`
 (`server.mjs`) that serves both the fixture HTML pages and the

@@ -21,7 +21,7 @@ test('prefers-reduced-motion skips the animation', async ({ page }) => {
   ).toBe(0);
 
   // Toggle turn 1 (currently auto-collapsed -> expanding).
-  await page.locator('.dsh-ta-toggle[data-dsh-ta-turn="1"]').click();
+  await page.locator('.dsh-ta-root[data-dsh-ta-turn="1"] .dsh-ta-toggle').click();
 
   // Within 50ms, the marker should already be cleared. The animation
   // path would take ~220ms.

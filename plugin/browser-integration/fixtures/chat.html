@@ -4,6 +4,10 @@
   <meta charset="utf-8" />
   <title>Chat fixture: 4 completed + 1 interrupted turn</title>
   <style>
+    /* The DSH host styles every chat row with border-box sizing; without it
+       the projector's fold animation (`style.height = offsetHeight`) would
+       over-shoot by the row's padding and twitch at animation start. */
+    * { box-sizing: border-box; }
     body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: #fff; color: #111; }
     [data-conversation-scroll] { height: 80vh; overflow-y: auto; }
     [data-chat-anchor-key] { padding: 4px 14px; }
@@ -42,7 +46,12 @@
            data-dsh-ta-duration="60000"
            data-dsh-ta-session="fixture-session"
            data-dsh-ta-auto-collapse="true">
-        <button class="dsh-ta-toggle" data-dsh-ta-turn="0" data-dsh-ta-session="fixture-session" aria-expanded="false">
+        <!-- Toggle buttons carry NO data-dsh-ta-* attributes: the real DSH
+             button (summary-view.tsx) is bare class + aria-expanded + title.
+             `collectSummaries` selects `[data-dsh-ta-turn]` and a stray
+             attribute here would be collected as a second summary row,
+             overwriting the root's membership facts with empties. -->
+        <button type="button" class="dsh-ta-toggle" aria-expanded="false">
           <span class="dsh-ta-label">turn 0 summary</span>
         </button>
         <div class="dsh-ta-divider" role="separator"></div>
@@ -65,7 +74,7 @@
            data-dsh-ta-duration="45000"
            data-dsh-ta-session="fixture-session"
            data-dsh-ta-auto-collapse="true">
-        <button class="dsh-ta-toggle" data-dsh-ta-turn="1" data-dsh-ta-session="fixture-session" aria-expanded="false">
+        <button type="button" class="dsh-ta-toggle" aria-expanded="false">
           <span class="dsh-ta-label">turn 1 summary</span>
         </button>
         <div class="dsh-ta-divider" role="separator"></div>
@@ -86,7 +95,7 @@
            data-dsh-ta-duration="30000"
            data-dsh-ta-session="fixture-session"
            data-dsh-ta-auto-collapse="true">
-        <button class="dsh-ta-toggle" data-dsh-ta-turn="2" data-dsh-ta-session="fixture-session" aria-expanded="false">
+        <button type="button" class="dsh-ta-toggle" aria-expanded="false">
           <span class="dsh-ta-label">turn 2 summary</span>
         </button>
         <div class="dsh-ta-divider" role="separator"></div>
@@ -107,7 +116,7 @@
            data-dsh-ta-duration="20000"
            data-dsh-ta-session="fixture-session"
            data-dsh-ta-auto-collapse="true">
-        <button class="dsh-ta-toggle" data-dsh-ta-turn="3" data-dsh-ta-session="fixture-session" aria-expanded="false">
+        <button type="button" class="dsh-ta-toggle" aria-expanded="false">
           <span class="dsh-ta-label">turn 3 summary</span>
         </button>
         <div class="dsh-ta-divider" role="separator"></div>
@@ -129,7 +138,7 @@
            data-dsh-ta-duration="10000"
            data-dsh-ta-session="fixture-session"
            data-dsh-ta-auto-collapse="false">
-        <button class="dsh-ta-toggle" data-dsh-ta-turn="4" data-dsh-ta-session="fixture-session" aria-expanded="true">
+        <button type="button" class="dsh-ta-toggle" aria-expanded="true">
           <span class="dsh-ta-label">turn 4 summary</span>
         </button>
         <div class="dsh-ta-divider" role="separator"></div>

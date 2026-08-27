@@ -36,9 +36,10 @@ test('completed turns auto-fold, interrupted turn stays open', async ({ page }) 
     );
   expect(turn4Collapsed).toEqual([]);
 
-  // Sanity: the toggle for each turn is wired and reachable.
-  await expect(page.locator('.dsh-ta-toggle[data-dsh-ta-turn="0"]')).toBeVisible();
-  await expect(page.locator('.dsh-ta-toggle[data-dsh-ta-turn="4"]')).toBeVisible();
+  // Sanity: the toggle for each turn is wired and reachable (locate via the
+  // summary root — the button itself carries no data-dsh-ta-* attributes).
+  await expect(page.locator('.dsh-ta-root[data-dsh-ta-turn="0"] .dsh-ta-toggle')).toBeVisible();
+  await expect(page.locator('.dsh-ta-root[data-dsh-ta-turn="4"] .dsh-ta-toggle')).toBeVisible();
 
   // Trigger a no-op animation flush to keep helper coverage honest.
   await waitForAnimationDone(page);
