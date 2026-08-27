@@ -5,3 +5,13 @@ lib/
 .codegraph/
 *.tgz
 *.log
+
+# 开发过程产物（不发到 GitHub）
+CLAUDE.md
+参考项目/
+.zcode/
+*.zip
+review-*
+fix-plan-*.md
+deep-research-report.md
+plugin/docs/code-review-*.md
