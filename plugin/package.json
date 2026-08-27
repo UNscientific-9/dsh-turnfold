@@ -1,6 +1,6 @@
 {
-  "name": "@dsh-plan/turn-collapse",
-  "description": "Codex/ZCode-style turn activity collapse for DSH Web: streaming thinking/tools stay visible while the agent works, then collapse into a permanent one-line summary above the final answer when the turn completes.",
+  "name": "@UNscientific-9/dsh-turnfold",
+  "description": "Codex/ZCode-style turn activity fold for DSH Web: streaming thinking/tools stay visible while the agent works, then fold into a permanent one-line summary above the final answer when the turn completes.",
   "version": "0.2.8",
   "type": "module",
   "main": "lib/index.js",

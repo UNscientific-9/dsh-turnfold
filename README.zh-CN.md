@@ -1,10 +1,10 @@
 [English](README.md) | [中文](README.zh-CN.md)
 
-# turn-collapse
+# dsh-turnfold
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![DSH](https://img.shields.io/badge/DSH-0.1.1--rc.2-blue)](https://github.com/deepseek-ai/dsh-client-runtime)
-[![Release](https://img.shields.io/badge/Release-v0.2.8-green)](https://github.com/UNscientific-9/turn-collapse/releases/tag/v0.2.8)
+[![Release](https://img.shields.io/badge/Release-v0.2.8-green)](https://github.com/UNscientific-9/dsh-turnfold/releases/tag/v0.2.8)
 
 > [DSH Web](https://github.com/deepseek-ai/dsh-client-runtime) 的轮次折叠插件：agent 工作时，thinking / 工具调用 / 中间叙述保持完整流式可见；**一轮（turn）结束后，自动把活动块收纳成一行摘要**，让最终回答成为视觉主体。点击摘要可随时展开/收起，刷新后恢复选择。
 
@@ -44,12 +44,12 @@
    ```json
    {
      "dependencies": {
-       "@dsh-plan/turn-collapse": "file:D:/path/to/dsh-plan-turn-collapse-0.2.8.tgz"
+       "@UNscientific-9/dsh-turnfold": "file:D:/path/to/dsh-turnfold-0.2.8.tgz"
      }
    }
    ```
 3. 在 profile 目录执行 `pnpm install`，重启 DSH web，浏览器硬刷新（`Ctrl+Shift+R` / `Cmd+Shift+R`）。
-4. 浏览器控制台应出现 `[dsh.turn-collapse] v0.2.8 loaded`。
+4. 浏览器控制台应出现 `[dsh.turnfold] v0.2.8 loaded`。
 
 ## 兼容与卸载
 

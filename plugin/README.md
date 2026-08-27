@@ -1,4 +1,4 @@
-# @dsh-plan/turn-collapse
+# @UNscientific-9/dsh-turnfold
 
 DSH Web 轮次折叠插件：agent 工作时，thinking / 工具调用 / 中间过程保持完整流式可见；**一轮（turn）结束后自动收纳成一行摘要**（`本轮用时 X · N 次工具 · M 段思考`），最终回答成为视觉主体。点击摘要可随时展开/收起。
 
@@ -28,7 +28,7 @@ DSH Web 轮次折叠插件：agent 工作时，thinking / 工具调用 / 中间�
 | 状态持久化 | 折叠/展开选择存 localStorage，刷新、重开会话后恢复；早期轮次的折叠状态也会被记住（成员快照） |
 | 位置正确 | 折叠条固定渲染在**用户消息下方、该轮回复正文上方**（0.2.6 锚点修复） |
 
-## 安装（拿到 `dsh-plan-turn-collapse-0.2.8.tgz` 后）
+## 安装（拿到 `dsh-turnfold-0.2.8.tgz` 后）
 
 ### 前提
 
@@ -37,7 +37,7 @@ DSH Web 轮次折叠插件：agent 工作时，thinking / 工具调用 / 中间�
 
 ### 步骤
 
-1. 把 `dsh-plan-turn-collapse-0.2.8.tgz` 放到一个**固定目录**（路径不要带空格，例如 `D:\deps\` 或项目目录下），记下它的完整路径。
+1. 把 `dsh-turnfold-0.2.8.tgz` 放到一个**固定目录**（路径不要带空格，例如 `D:\deps\` 或项目目录下），记下它的完整路径。
 
 2. 编辑 DSH web profile 的依赖文件：
    `%USERPROFILE%\.dsh\profiles\web\package.json`
@@ -46,7 +46,7 @@ DSH Web 轮次折叠插件：agent 工作时，thinking / 工具调用 / 中间�
    ```json
    {
      "dependencies": {
-       "@dsh-plan/turn-collapse": "file:D:/deps/dsh-plan-turn-collapse-0.2.8.tgz"
+       "@UNscientific-9/dsh-turnfold": "file:D:/deps/dsh-turnfold-0.2.8.tgz"
      }
    }
    ```
@@ -66,7 +66,7 @@ DSH Web 轮次折叠插件：agent 工作时，thinking / 工具调用 / 中间�
 
 ### 确认装上了
 
-- 浏览器控制台（F12 → Console）出现：`[dsh.turn-collapse] v0.2.8 loaded`
+- 浏览器控制台（F12 → Console）出现：`[dsh.turnfold] v0.2.8 loaded`
 - 打开任意一个已完成会话：用户消息下方出现 `本轮用时 …` 折叠条；正常完成的轮次默认为折叠态
 
 ## 使用
@@ -77,7 +77,7 @@ DSH Web 轮次折叠插件：agent 工作时，thinking / 工具调用 / 中间�
 
 ## 回滚 / 卸载
 
-1. 从 `%USERPROFILE%\.dsh\profiles\web\package.json` 删除 `@dsh-plan/turn-collapse` 依赖行。
+1. 从 `%USERPROFILE%\.dsh\profiles\web\package.json` 删除 `@UNscientific-9/dsh-turnfold` 依赖行。
 2. 在 profile 目录执行 `pnpm install`。
 3. 重启 DSH web，浏览器强制刷新一次。
 
@@ -99,7 +99,7 @@ npm install --ignore-scripts    # 构建依赖（typescript/esbuild）
 npm run typecheck               # tsc --noEmit
 npm test                        # node --test（57 个用例）
 npm run build                   # 产物 → lib/
-npm pack                        # 打包 → dsh-plan-turn-collapse-<version>.tgz
+npm pack                        # 打包 → dsh-turnfold-<version>.tgz
 ```
 
 ## 目录

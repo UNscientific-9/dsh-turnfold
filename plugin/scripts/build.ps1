@@ -1,4 +1,4 @@
-# Build @dsh-plan/turn-collapse.
+# Build @UNscientific-9/dsh-turnfold.
 # Runs esbuild.exe and tsc directly (no Node child_process.spawn), which is
 # required under the DSH sandbox; output layout matches the shipped
 # @deepseek-ai client bundle shape.
@@ -23,7 +23,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $raw = Get-Content $clientRaw -Raw
 $banner = @'
 window.__ModuleLoader__.load({
-	id: "@dsh-plan/turn-collapse",
+	id: "@UNscientific-9/dsh-turnfold",
 	factory: (require) => {
 		var module = { exports: {} };
 		var exports = module.exports;
@@ -49,4 +49,4 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $node $tsc --emitDeclarationOnly -p (Join-Path $root "tsconfig.json")
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host "built @dsh-plan/turn-collapse -> lib/client.js, lib/index.js, lib/types"
+Write-Host "built @UNscientific-9/dsh-turnfold -> lib/client.js, lib/index.js, lib/types"

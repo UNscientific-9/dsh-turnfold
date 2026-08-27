@@ -1,5 +1,5 @@
 /**
- * Browser half: the turn-collapse plugin.
+ * Browser half: the dsh-turnfold plugin.
  *
  * Registers the turn-activity conversation definition, its chat renderer and
  * dictionaries, and owns the DOM projector lifecycle.
@@ -26,7 +26,7 @@ export const CLIENT_VERSION = '0.2.8';
 export function apply(ctx: Context): void {
   // One-shot load marker: makes "which bundle is the browser running"
   // answerable at a glance during deploys.
-  console.info(`[dsh.turn-collapse] v${CLIENT_VERSION} loaded`);
+  console.info(`[dsh.turnfold] v${CLIENT_VERSION} loaded`);
   ensureStyles(document, CLIENT_VERSION);
   // Restore persisted membership snapshots before any render can record
   // fresher facts (existing entries win in hydrateMembership).
@@ -36,7 +36,7 @@ export function apply(ctx: Context): void {
 
   ctx.effect(
     () => ctx.locale.register(NS, { zh, en }),
-    'turn-collapse: dictionaries',
+    'dsh-turnfold: dictionaries',
   );
 
   ctx.slots.inject('conversation.chat.node', () =>
@@ -118,6 +118,6 @@ export function apply(ctx: Context): void {
         projector.stop();
       };
     },
-    'turn-collapse: projector + auto-load',
+    'dsh-turnfold: projector + auto-load',
   );
 }

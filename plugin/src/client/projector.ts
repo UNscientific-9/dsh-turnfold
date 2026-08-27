@@ -967,7 +967,7 @@ export function createProjector(
       applyPlan(column, scrollerOf(column), rows, summaries, isCollapsed, compensate, null);
     }
     if (debugEnabled && debugReports.length > 0) {
-      console.info('[dsh.turn-collapse] reconcile', { flowCount: columns.length, perColumn: debugReports });
+      console.info('[dsh.turnfold] reconcile', { flowCount: columns.length, perColumn: debugReports });
     }
   };
 

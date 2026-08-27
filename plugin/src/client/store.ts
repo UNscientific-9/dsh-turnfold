@@ -29,7 +29,7 @@ export function createCollapseStore(persistence: CollapsePersistence): CollapseS
         // A subscriber bug must never break the store, but it must be visible
         // so it doesn't masquerade as a "the collapse stopped working" symptom.
         // eslint-disable-next-line no-console
-        console.error('turn-collapse: subscriber threw', error);
+        console.error('dsh-turnfold: subscriber threw', error);
       }
     }
   };

@@ -72,7 +72,7 @@ ScrollAnchor（用户 toggle：展开定位到该轮第一个活动行、折叠�
 | summary 行根 | `data-dsh-ta-turn` / `data-dsh-ta-final-step` / `data-dsh-ta-tools`（逗号分隔 callId）/ `data-dsh-ta-thinking` / `data-dsh-ta-duration` | 成员事实（projector 读取，避免二次语义推断） |
 | activity 行 | `data-dsh-ta-collapsed="true"` + `style.display:none` | 折叠标记；React 重渲染/行重建后由 reconcile 幂等重应用 |
 | final 行（折叠轮） | `data-dsh-ta-final-collapsed="true"` | 该轮折叠时标记其最终回答行，CSS 隐藏行内 Think 块（`data-variant="think"`，见 `maintenance.md`）；展开清除 |
-| `<head>` | `<style data-plugin-css="@dsh-plan/turn-collapse/styles">` | 插件样式（幂等注入） |
+| `<head>` | `<style data-plugin-css="@UNscientific-9/dsh-turnfold/styles">` | 插件样式（幂等注入） |
 
 ## 关键设计决策
 

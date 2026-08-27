@@ -100,7 +100,7 @@ export const TURN_ACTIVITY_CSS = `
 }
 `;
 
-export const CSS_TAG_ID = '@dsh-plan/turn-collapse/styles';
+export const CSS_TAG_ID = '@UNscientific-9/dsh-turnfold/styles';
 
 /** Inject the stylesheet once; idempotent across HMR / plugin restarts. */
 export function ensureStyles(document: Document, version = ''): void {
@@ -110,7 +110,7 @@ export function ensureStyles(document: Document, version = ''): void {
     return;
   }
   const tag = document.createElement('style');
-  tag.dataset.plugin = '@dsh-plan/turn-collapse';
+  tag.dataset.plugin = '@UNscientific-9/dsh-turnfold';
   tag.dataset.pluginCss = CSS_TAG_ID;
   tag.textContent = TURN_ACTIVITY_CSS;
   if (version !== '') tag.dataset.pluginVersion = version;

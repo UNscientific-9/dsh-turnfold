@@ -1,10 +1,10 @@
 [English](README.md) | [中文](README.zh-CN.md)
 
-# turn-collapse
+# dsh-turnfold
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![DSH](https://img.shields.io/badge/DSH-0.1.1--rc.2-blue)](https://github.com/deepseek-ai/dsh-client-runtime)
-[![Release](https://img.shields.io/badge/Release-v0.2.8-green)](https://github.com/UNscientific-9/turn-collapse/releases/tag/v0.2.8)
+[![Release](https://img.shields.io/badge/Release-v0.2.8-green)](https://github.com/UNscientific-9/dsh-turnfold/releases/tag/v0.2.8)
 
 > A Codex/ZCode-style turn activity collapse plugin for [DSH Web](https://github.com/deepseek-ai/dsh-client-runtime). While the agent works, thinking / tool calls / narration stay fully visible. **When a turn completes, the activity collapses into a one-line summary** so the final answer becomes the visual focus.
 
@@ -44,12 +44,12 @@ Final answer...
    ```json
    {
      "dependencies": {
-       "@dsh-plan/turn-collapse": "file:D:/path/to/dsh-plan-turn-collapse-0.2.8.tgz"
+       "@UNscientific-9/dsh-turnfold": "file:D:/path/to/dsh-turnfold-0.2.8.tgz"
      }
    }
    ```
 3. In the profile directory, run `pnpm install`, then restart DSH web and hard-refresh the browser (`Ctrl+Shift+R` / `Cmd+Shift+R`).
-4. The browser console should show `[dsh.turn-collapse] v0.2.8 loaded` on load.
+4. The browser console should show `[dsh.turnfold] v0.2.8 loaded` on load.
 
 ## Compatibility & uninstall
 

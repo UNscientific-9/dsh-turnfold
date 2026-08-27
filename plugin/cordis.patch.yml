@@ -1,4 +1,4 @@
-# Bundle patch for @dsh-plan/turn-collapse.
+# Bundle patch for @UNscientific-9/dsh-turnfold.
 #
 # The single `insert` row creates a Cordis loader entry whose `name` matches
 # the bundle id declared in `dsh.profile.bundles`. Without an active loader
@@ -7,4 +7,4 @@
 # never sees the plugin. The row carries no host-side behaviour; the
 # plugin's actual work runs in the browser from the `client` export.
 - insert:
-    - name: '@dsh-plan/turn-collapse'
+    - name: '@UNscientific-9/dsh-turnfold'
