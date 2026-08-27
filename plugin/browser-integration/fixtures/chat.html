@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Chat fixture: 4 completed + 1 interrupted turn</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: #fff; color: #111; }
+    [data-conversation-scroll] { height: 80vh; overflow-y: auto; }
+    [data-chat-anchor-key] { padding: 4px 14px; }
+    .user-msg { color: #888; font-style: italic; background: #fafafa; }
+    .tool-call { color: #06c; }
+    .final-answer { background: #fffbe6; padding: 10px 14px; margin: 6px 0; border-left: 3px solid #f90; }
+    .dsh-ta-root { margin: 8px 14px; padding: 6px 10px; background: #f4f4f4; border: 1px solid #e0e0e0; border-radius: 4px; }
+    .dsh-ta-toggle { cursor: pointer; background: none; border: none; padding: 0; font: inherit; color: inherit; }
+    .dsh-ta-divider { border-top: 1px solid #e0e0e0; margin-top: 6px; }
+    /* Plugin styles mirrored from styles.ts (the essentials the test asserts on): */
+    [data-dsh-ta-collapsed="true"] { display: none !important; }
+    [data-dsh-ta-final-collapsed="true"] [data-variant="think"] { display: none !important; }
+    .dsh-ta-animating { transition: height 220ms ease, margin-bottom 220ms ease, opacity 150ms ease; overflow: hidden; }
+  </style>
+</head>
+<body>
+  <div data-conversation-scroll>
+    <div data-chat-flow="fixture-flow-A">
+
+      <!-- Turn 0 (completed, auto-collapse) -->
+      <div data-chat-anchor-key="9:turn-head0" class="user-msg">user: turn 0 question</div>
+      <div data-chat-anchor-key="14:assistant-step0:0">thinking 0.0</div>
+      <div data-chat-anchor-key="14:assistant-step0:1">thinking 0.1</div>
+      <div data-chat-anchor-key="9:tool-callc0" class="tool-call">tool call: c0</div>
+      <div data-chat-anchor-key="9:tool-callc1" class="tool-call">tool call: c1</div>
+      <div data-chat-anchor-key="14:assistant-step0:2">thinking 0.2</div>
+      <div data-chat-anchor-key="14:assistant-step0:3" class="final-answer">
+        <div data-variant="think">final thinking 0 (must hide on collapse)</div>
+        final answer 0
+      </div>
+      <div class="dsh-ta-root"
+           data-dsh-ta-turn="0"
+           data-dsh-ta-final-step="3"
+           data-dsh-ta-tools="c0,c1"
+           data-dsh-ta-thinking="3"
+           data-dsh-ta-duration="60000"
+           data-dsh-ta-session="fixture-session"
+           data-dsh-ta-auto-collapse="true">
+        <button class="dsh-ta-toggle" data-dsh-ta-turn="0" data-dsh-ta-session="fixture-session" aria-expanded="false">
+          <span class="dsh-ta-label">turn 0 summary</span>
+        </button>
+        <div class="dsh-ta-divider" role="separator"></div>
+      </div>
+
+      <!-- Turn 1 (completed, auto-collapse) -->
+      <div data-chat-anchor-key="9:turn-head1" class="user-msg">user: turn 1 question</div>
+      <div data-chat-anchor-key="14:assistant-step1:0">thinking 1.0</div>
+      <div data-chat-anchor-key="9:tool-callc2" class="tool-call">tool call: c2</div>
+      <div data-chat-anchor-key="14:assistant-step1:1">thinking 1.1</div>
+      <div data-chat-anchor-key="14:assistant-step1:2" class="final-answer">
+        <div data-variant="think">final thinking 1 (must hide on collapse)</div>
+        final answer 1
+      </div>
+      <div class="dsh-ta-root"
+           data-dsh-ta-turn="1"
+           data-dsh-ta-final-step="2"
+           data-dsh-ta-tools="c2"
+           data-dsh-ta-thinking="2"
+           data-dsh-ta-duration="45000"
+           data-dsh-ta-session="fixture-session"
+           data-dsh-ta-auto-collapse="true">
+        <button class="dsh-ta-toggle" data-dsh-ta-turn="1" data-dsh-ta-session="fixture-session" aria-expanded="false">
+          <span class="dsh-ta-label">turn 1 summary</span>
+        </button>
+        <div class="dsh-ta-divider" role="separator"></div>
+      </div>
+
+      <!-- Turn 2 (completed, auto-collapse) -->
+      <div data-chat-anchor-key="9:turn-head2" class="user-msg">user: turn 2 question</div>
+      <div data-chat-anchor-key="14:assistant-step2:0">thinking 2.0</div>
+      <div data-chat-anchor-key="14:assistant-step2:1" class="final-answer">
+        <div data-variant="think">final thinking 2</div>
+        final answer 2
+      </div>
+      <div class="dsh-ta-root"
+           data-dsh-ta-turn="2"
+           data-dsh-ta-final-step="1"
+           data-dsh-ta-tools=""
+           data-dsh-ta-thinking="1"
+           data-dsh-ta-duration="30000"
+           data-dsh-ta-session="fixture-session"
+           data-dsh-ta-auto-collapse="true">
+        <button class="dsh-ta-toggle" data-dsh-ta-turn="2" data-dsh-ta-session="fixture-session" aria-expanded="false">
+          <span class="dsh-ta-label">turn 2 summary</span>
+        </button>
+        <div class="dsh-ta-divider" role="separator"></div>
+      </div>
+
+      <!-- Turn 3 (completed, auto-collapse) -->
+      <div data-chat-anchor-key="9:turn-head3" class="user-msg">user: turn 3 question</div>
+      <div data-chat-anchor-key="9:tool-callc3" class="tool-call">tool call: c3</div>
+      <div data-chat-anchor-key="14:assistant-step3:0" class="final-answer">
+        <div data-variant="think">final thinking 3</div>
+        final answer 3
+      </div>
+      <div class="dsh-ta-root"
+           data-dsh-ta-turn="3"
+           data-dsh-ta-final-step="0"
+           data-dsh-ta-tools="c3"
+           data-dsh-ta-thinking="0"
+           data-dsh-ta-duration="20000"
+           data-dsh-ta-session="fixture-session"
+           data-dsh-ta-auto-collapse="true">
+        <button class="dsh-ta-toggle" data-dsh-ta-turn="3" data-dsh-ta-session="fixture-session" aria-expanded="false">
+          <span class="dsh-ta-label">turn 3 summary</span>
+        </button>
+        <div class="dsh-ta-divider" role="separator"></div>
+      </div>
+
+      <!-- Turn 4 (interrupted, NOT auto-collapse) -->
+      <div data-chat-anchor-key="9:turn-head4" class="user-msg">user: turn 4 question</div>
+      <div data-chat-anchor-key="14:assistant-step4:0">thinking 4.0</div>
+      <div data-chat-anchor-key="9:tool-callc4" class="tool-call">tool call: c4</div>
+      <div data-chat-anchor-key="14:assistant-step4:1" class="final-answer">
+        <div data-variant="think">final thinking 4</div>
+        final answer 4
+      </div>
+      <div class="dsh-ta-root"
+           data-dsh-ta-turn="4"
+           data-dsh-ta-final-step="1"
+           data-dsh-ta-tools="c4"
+           data-dsh-ta-thinking="1"
+           data-dsh-ta-duration="10000"
+           data-dsh-ta-session="fixture-session"
+           data-dsh-ta-auto-collapse="false">
+        <button class="dsh-ta-toggle" data-dsh-ta-turn="4" data-dsh-ta-session="fixture-session" aria-expanded="true">
+          <span class="dsh-ta-label">turn 4 summary</span>
+        </button>
+        <div class="dsh-ta-divider" role="separator"></div>
+      </div>
+
+    </div>
+  </div>
+  <script src="/lib/fixture.js"></script>
+</body>
+</html>

@@ -49,4 +49,12 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $node $tsc --emitDeclarationOnly -p (Join-Path $root "tsconfig.json")
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host "built @UNscientific-9/dsh-turnfold -> lib/client.js, lib/index.js, lib/types"
+# ── browser-integration fixture bundle (IIFE for static HTML pages) ────────
+# Exposes `window.__dshTurnfold` with the projector + store handles that
+# Playwright specs use to drive the same paths the React view would.
+& $esbuild (Join-Path $root "src\client\fixture-entry.ts") `
+  --bundle --format=iife --platform=browser --target=es2022 `
+  "--outfile=$(Join-Path $lib 'fixture.js')" --log-level=warning
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+Write-Host "built @UNscientific-9/dsh-turnfold -> lib/client.js, lib/index.js, lib/fixture.js, lib/types"
