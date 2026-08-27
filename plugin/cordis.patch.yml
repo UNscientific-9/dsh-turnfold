@@ -1,0 +1,10 @@
+# Bundle patch for @dsh-plan/turn-collapse.
+#
+# The single `insert` row creates a Cordis loader entry whose `name` matches
+# the bundle id declared in `dsh.profile.bundles`. Without an active loader
+# row, DSH's `@deepseek-ai/dsh-client-modules` skips the package's
+# `dsh.client` declaration, so `client.js` is never served and the browser
+# never sees the plugin. The row carries no host-side behaviour; the
+# plugin's actual work runs in the browser from the `client` export.
+- insert:
+    - name: '@dsh-plan/turn-collapse'

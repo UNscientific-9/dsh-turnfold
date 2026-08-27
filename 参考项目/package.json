@@ -1,0 +1,72 @@
+{
+  "name": "@ch4acko3/dsh-turn-fold",
+  "version": "0.4.2",
+  "description": "Codex-style turn folding for the DSH WebUI conversation, implemented as a dsh-harmony provider.",
+  "main": "./index.cjs",
+  "engines": {
+    "node": "^22.22.3 || >=24.11.1"
+  },
+  "files": [
+    "README.md",
+    "README.zh-CN.md",
+    "harmony.patch.yml",
+    "index.cjs",
+    "inline-source.cjs",
+    "locales.cjs",
+    "locales/*.json",
+    "settings.cjs",
+    "patch.cjs"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CH4ACKO3/dsh-turn-fold"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./harmony.patch.yml"
+    },
+    "harmony": {
+      "patches": [
+        "./patch.cjs"
+      ]
+    },
+    "plugin": {
+      "schemaVersion": 1,
+      "displayName": {
+        "en": "Turn Fold",
+        "zh-CN": "Turn Fold"
+      },
+      "summary": {
+        "en": "Collapse each completed turn's agent activity into a summary bar; keep the final answer visible.",
+        "zh-CN": "将每个已完成 turn 的 Agent activity 折叠成摘要栏，最终答复保持可见。"
+      },
+      "category": "ui"
+    }
+  },
+  "scripts": {
+    "test": "node test/run.cjs",
+    "check": "node test/run.cjs"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.8 || ^0.1.1-0",
+    "@deepseek-ai/dsh-settings": "^0.1.0-rc.8 || ^0.1.1-0",
+    "dsh-harmony": "^0.7.0 || ^0.8.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-client-ui-conversation": "0.1.0-rc.8",
+    "@deepseek-ai/dsh-settings": "0.1.0-rc.8",
+    "@phenomnomnominal/tsquery": "^6.2.0",
+    "dsh-harmony": "^0.8.0",
+    "react": "18.3.1",
+    "react-test-renderer": "18.3.1",
+    "semver": "^7.8.5",
+    "typescript": "^6.0.3"
+  }
+}
