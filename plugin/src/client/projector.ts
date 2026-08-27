@@ -19,11 +19,13 @@
  * 迁往 constants / row-membership / row-classify / row-apply / scroll；
  * 文件末尾的 re-export 维持旧外部 API 不变，外部 import 路径无需改动。
  */
-import { beginAnimatedTransition, prefersReducedMotion } from './animate.ts';
-import { computeSyntheticSummaries, synthLabel, type SynthesizedSummary } from './synth.ts';
+import { computeSyntheticSummaries, type SynthesizedSummary } from './synth.ts';
 import type { CollapseStore } from './store.ts';
 import { readCurrentSessionId } from './singletons.ts';
-import { DATA_SESSION, DATA_SYNTH_TURN, DATA_TURN } from './constants.ts';
+import { DATA_SYNTH_TURN, DATA_TURN } from './constants.ts';
+import { buildSynthBar, syncSynthBars } from './synth-bars.ts';
+import { applyPlan, pickColumnSessionId } from './apply-plan.ts';
+import { prefersReducedMotion } from './animate.ts';
 import {
   collectSummaries,
   isUnownedRow,
@@ -32,101 +34,8 @@ import {
   type RowWithElement,
   type SummaryRef,
 } from './row-membership.ts';
-import { applyFinalThinkMarkers, computeRowTargets } from './row-classify.ts';
-import { applyRowTargets } from './row-apply.ts';
-import { describeRows, flowTop, isAtBottom, pickAnchor, scrollerOf } from './scroll.ts';
-
-/** DOM attribute -> fold bar root for synthesized turns. */
-function synthBarSelector(turn: number): string {
-  return `[${DATA_SYNTH_TURN}="${turn}"]`;
-}
-
-const CHEVRON_PATH = 'M4.5 2.5 8 6l-3.5 3.5';
-
-/**
- * Build the synthesized fold bar for one turn (plain DOM — the synthesized
- * bar is projector-managed and never passes through the React renderer).
- * Class names are the shared `dsh-ta-*` stylesheet; the root carries
- * `data-dsh-ta-synth-turn` (NOT `data-dsh-ta-turn`) so `collectSummaries`
- * cannot mistake it for an engine summary.
- */
-export function buildSynthBar(
-  summary: SynthesizedSummary,
-  collapsed: boolean,
-  onToggle: (turn: number, nextCollapsed: boolean) => void,
-): HTMLElement {
-  const root = summary.anchorRow.ownerDocument.createElement('div');
-  root.className = 'dsh-ta-root dsh-ta-synth';
-  root.setAttribute(DATA_SYNTH_TURN, String(summary.turn));
-  if (summary.sessionId !== null) root.setAttribute(DATA_SESSION, summary.sessionId);
-  const button = summary.anchorRow.ownerDocument.createElement('button');
-  button.type = 'button';
-  button.className = 'dsh-ta-toggle';
-  button.setAttribute('aria-expanded', String(!collapsed));
-  button.title = collapsed ? '展开' : '折叠';
-  const svg = summary.anchorRow.ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('class', 'dsh-ta-chevron');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.setAttribute('viewBox', '0 0 12 12');
-  svg.setAttribute('width', '12');
-  svg.setAttribute('height', '12');
-  const path = summary.anchorRow.ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'path');
-  path.setAttribute('d', CHEVRON_PATH);
-  path.setAttribute('fill', 'none');
-  path.setAttribute('stroke', 'currentColor');
-  path.setAttribute('stroke-width', '1.5');
-  path.setAttribute('stroke-linecap', 'round');
-  path.setAttribute('stroke-linejoin', 'round');
-  svg.appendChild(path);
-  const label = summary.anchorRow.ownerDocument.createElement('span');
-  label.className = 'dsh-ta-label';
-  label.textContent = synthLabel(summary.stepCount, summary.toolCallIds.length);
-  button.appendChild(svg);
-  button.appendChild(label);
-  button.addEventListener('click', () => {
-    const next = button.getAttribute('aria-expanded') === 'true';
-    onToggle(summary.turn, next);
-  });
-  const divider = summary.anchorRow.ownerDocument.createElement('div');
-  divider.className = 'dsh-ta-divider';
-  divider.setAttribute('role', 'separator');
-  divider.setAttribute('aria-label', '已折叠的执行步骤');
-  root.appendChild(button);
-  root.appendChild(divider);
-  return root;
-}
-
-/**
- * Render/sync/remove the synthesized bars of one column (idempotent — safe
- * to call on every reconcile; a no-op pass emits no DOM mutation, so the
- * MutationObserver loop terminates). `ensureDecision` lets the caller apply
- * the default-collapse policy before the bar reads the store.
- */
-export function syncSynthBars(
-  column: HTMLElement,
-  synth: ReadonlyMap<number, SynthesizedSummary>,
-  isCollapsed: (turn: number) => boolean,
-  onToggle: (turn: number, nextCollapsed: boolean) => void,
-): void {
-  for (const el of [...column.querySelectorAll<HTMLElement>(`[${DATA_SYNTH_TURN}]`)]) {
-    const turnText = el.getAttribute(DATA_SYNTH_TURN);
-    const turn = turnText !== null && /^\d+$/.test(turnText) ? Number(turnText) : NaN;
-    if (!Number.isInteger(turn) || !synth.has(turn)) el.remove();
-  }
-  for (const summary of synth.values()) {
-    const collapsed = isCollapsed(summary.turn);
-    const existing = column.querySelector<HTMLElement>(synthBarSelector(summary.turn));
-    if (existing === null) {
-      summary.anchorRow.insertAdjacentElement('beforebegin', buildSynthBar(summary, collapsed, onToggle));
-      continue;
-    }
-    const button = existing.querySelector<HTMLButtonElement>('.dsh-ta-toggle');
-    const label = existing.querySelector<HTMLElement>('.dsh-ta-label');
-    const text = synthLabel(summary.stepCount, summary.toolCallIds.length);
-    if (button !== null) button.setAttribute('aria-expanded', String(!collapsed));
-    if (label !== null && label.textContent !== text) label.textContent = text;
-  }
-}
+import { computeRowTargets } from './row-classify.ts';
+import { describeRows, scrollerOf } from './scroll.ts';
 
 export interface TurnActivityProjector {
   start(): void;
@@ -151,139 +60,6 @@ export interface TurnActivityProjector {
   ): void;
   /** Reconcile every recorded decision; rAF-merged, idempotent. */
   reconcile(): void;
-}
-
-/**
- * User-driven toggle intent: fold/unfold with an animated transition when
- * possible. The summary row sits at the TOP of its turn, so toggling never
- * needs viewport compensation — the fold control stays put and activity
- * grows/shrinks beneath it. Only `applyTurnCollapse` with `userDriven` sets
- * this; automatic collapses and background reconciles pass `null`.
- */
-export interface ApplyFocus {
-  readonly animate: boolean;
-  readonly reducedMotion: boolean;
-}
-
-/**
- * Apply a hide/visibility plan to the column with optional scroll
- * stabilization. `summaries` are the currently rendered turn summaries;
- * `isCollapsed` decides per-turn visibility; `compensate` enables the
- * viewport stabilization used by user-driven toggles and the summary
- * view's auto-collapse, not by background reconciles.
- *
- * Stabilization rules (verified against the host ChatView's own follow/scroll
- * logic; all measurements happen synchronously, no rAF race):
- *
- * - User toggle (`focus` set): fold/unfold, animated when the change is
- *   single-direction and motion is not reduced. No scrolling at all — the
- *   summary row anchors the top of its turn, so it never moves when the
- *   activity beneath it appears or disappears.
- * - Pure expansion (rows appear): keep the anchor row — the first row that
- *   is not part of this change and starts at/below the viewport top — at its
- *   viewport position, so the summary the user just clicked stays put while
- *   activity opens above it.
- * - Collapse (or mixed): leave `scrollTop` untouched. The viewport then
- *   naturally shows the collapsed state; only when the fold removed every
- *   visible row (the whole viewport was activity) do we scroll the first
- *   remaining row to the viewport top. This is what prevents the "page
- *   jumps to the top" bug: the old code compensated by a large negative
- *   delta and the browser clamped it to zero.
- * - At bottom: hands the viewport to DSH's own follow logic and does nothing.
- */
-function applyPlan(
-  column: HTMLElement,
-  scrollport: HTMLElement,
-  rows: readonly RowWithElement[],
-  summaries: ReadonlyMap<number, SummaryRef>,
-  isCollapsed: (turn: number) => boolean,
-  compensate: boolean,
-  focus: ApplyFocus | null,
-): void {
-  const targets = computeRowTargets(rows, summaries, isCollapsed);
-  // The final answer row stays visible, but its in-row thinking block folds
-  // with the turn. Applied on every path — including the animated
-  // user-toggle branch, which hands the activity rows to
-  // beginAnimatedTransition and never runs applyRowTargets.
-  applyFinalThinkMarkers(rows, summaries, isCollapsed);
-  // Classify the rows this plan actually changes (before applying, since the
-  // data attributes flip during the apply).
-  const unhideRows: HTMLElement[] = [];
-  const hideRows: HTMLElement[] = [];
-  for (const [row, hide] of targets) {
-    const marked = row.element.dataset.dshTaCollapsed === 'true';
-    if (hide !== marked) (hide ? hideRows : unhideRows).push(row.element);
-  }
-  const changed = unhideRows.length > 0 || hideRows.length > 0;
-  if (!changed) return;
-
-  if (focus !== null) {
-    // User-driven toggle: no viewport compensation at all — the fold control
-    // is pinned to the top of its turn, so it stays put while the activity
-    // beneath it animates. A mixed-direction change (rare) applies instantly.
-    const singleDirection = unhideRows.length === 0 || hideRows.length === 0;
-    const moving = unhideRows.length > 0 ? unhideRows : hideRows;
-    if (focus.animate && singleDirection && !focus.reducedMotion) {
-      beginAnimatedTransition(column.ownerDocument, moving, hideRows.length > 0, () => {
-        // Animation finished; nothing else to do — no scroll adjustment.
-      });
-      return;
-    }
-    applyRowTargets(rows, targets);
-    return;
-  }
-
-  const atBottom = isAtBottom(scrollport);
-  if (compensate && !atBottom && unhideRows.length > 0 && hideRows.length === 0) {
-    // Pure expansion: keep the anchor row pinned to its viewport position.
-    const changing = new Set(unhideRows);
-    const anchor = pickAnchor(rows, scrollport, changing);
-    const before = anchor === null ? null : flowTop(anchor, scrollport);
-    applyRowTargets(rows, targets);
-    if (anchor !== null && before !== null) {
-      const after = flowTop(anchor, scrollport);
-      if (after !== before) scrollport.scrollTop += after - before;
-    }
-  } else {
-    applyRowTargets(rows, targets);
-    if (!compensate || atBottom) return;
-    // Collapse (or mixed): scrollTop stays put; only rescue a viewport that
-    // lost every visible row by pulling the first remaining row to the top.
-    const viewportTop = scrollport.getBoundingClientRect().top;
-    const viewportBottom = viewportTop + scrollport.clientHeight;
-    let firstVisible: HTMLElement | null = null;
-    let visibleInViewport = false;
-    for (const row of rows) {
-      if (targets.get(row) === true) continue;
-      const rect = row.element.getBoundingClientRect();
-      if (firstVisible === null) firstVisible = row.element;
-      if (rect.bottom > viewportTop && rect.top < viewportBottom) {
-        visibleInViewport = true;
-        break;
-      }
-    }
-    if (!visibleInViewport && firstVisible !== null) {
-      const rect = firstVisible.getBoundingClientRect();
-      const max = Math.max(0, scrollport.scrollHeight - scrollport.clientHeight);
-      scrollport.scrollTop = Math.min(
-        Math.max(0, scrollport.scrollTop + (rect.top - viewportTop)),
-        max,
-      );
-    }
-  }
-}
-
-/** Probe a column's owner session by reading the `data-dsh-ta-session`
- *  attribute off the first summary that has one. Used to pick the right
- *  store key when reconciling a multi-column document — every summary in a
- *  single column belongs to the same session, so a single probe suffices. */
-function pickColumnSessionId(
-  summaries: ReadonlyMap<number, SummaryRef>,
-): string | null {
-  for (const ref of summaries.values()) {
-    if (ref.sessionId !== undefined) return ref.sessionId;
-  }
-  return null;
 }
 
 export function createProjector(
@@ -588,3 +364,7 @@ export {
 } from './row-apply.ts';
 
 export { scrollerOf } from './scroll.ts';
+
+export { buildSynthBar, syncSynthBars } from './synth-bars.ts';
+
+export { type ApplyFocus } from './apply-plan.ts';
