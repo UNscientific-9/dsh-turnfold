@@ -163,3 +163,83 @@ ScrollAnchor（用户 toggle：展开定位到该轮第一个活动行、折叠�
     （先统一读 offsetHeight 一次 layout，再统一写样式，N 次 → 2 次）。
     任何后续批量 DOM 读写都必须先全部读完再开始写——读后立即写会强制
     每次 layout pass，正好复现"点击折叠后延迟"。
+
+## 模块拆分（refactor/projector-split）
+
+`src/client/projector.ts`（原 1090 行）已拆为 **facade + 9 个职责模块**
+（行为零变化，13 个 browser-integration smoke 用例锁死回归；每个阶段
+独立 commit，可单独 revert）：
+
+```
+                    ┌──────────────┐
+                    │  index.ts    │  （入口，外部）
+                    └──────┬───────┘
+                           ▼
+        ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+        │singletons.ts │  │ summary-view │  │  projector   │  ← 纯 facade
+        │  (现有)      │  │   .tsx       │  │  .ts（零 import，仅 re-export）│
+        └──────┬───────┘  └──────┬───────┘  └──────────────┘
+               │ readSessionId   │             │
+               │ 注入（单向）      │             ▼
+               │                 │       ┌──────────────────┐
+               │                 │       │ projector-core.ts│  createProjector
+               │                 │       │  （闭包 + 调度 + │  闭包+调度
+               │                 │       │   observer 白名单）│
+               │                 │       └────────┬─────────┘
+               │                 │                │
+               │                 │   ┌────────────┴──────┐
+               │                 │   ▼                   ▼
+               │                 │ ┌────────────┐  ┌────────────────┐
+               │                 │ │apply-plan  │  │ synth-bars.ts  │
+               │                 │ │   .ts      │  │（合成折叠条）    │
+               │                 │ └────┬───────┘  └────────────────┘
+               │                 │      │
+               │    ┌────────────┼──────┼──────────────┐
+               │    ▼            ▼      ▼              ▼
+               │ ┌──────┐  ┌─────────┐ ┌────────┐ ┌─────────┐
+               │ │row-  │  │ row-    │ │ scroll │ │ animate │
+               │ │class-│  │ apply   │ │  .ts   │ │  .ts    │（动画状态
+               │ │ify.ts│  │  .ts    │ │        │ │         │  单例）
+               │ └──────┘  └─────────┘ └────────┘ └─────────┘
+               │   ▲           ▲            ▲
+               │   └───────────┴────┬───────┘
+               │                    │ type-only
+               │       ┌────────────┴────┐      ┌─────────────────┐
+               └──────►│row-membership.ts│─────►│membership-      │
+                       │（collect+缓存）  │ 运行时│ persist.ts(现有) │
+                       └────────┬────────┘      └─────────────────┘
+                                │
+                    ┌───────────▼─────────┐   ┌────────────┐
+                    │ constants.ts（9 个  │   │ types.ts   │ ← 零依赖，
+                    │ data-dsh-ta-* 常量）│   │（共享类型）  │   type-only
+                    └─────────────────────┘   └────────────┘
+```
+
+- `projector.ts`：**零 import 的纯 facade**——只 re-export。外部
+  （summary-view / index / singletons / membership-persist / 测试）的
+  import 路径全部保持不变。
+- `projector-core.ts`：`createProjector` 工厂 + `TurnActivityProjector`
+  接口 + 闭包（sessionId / observer / raf / unsubscribe / running）+
+  `PROJECTOR_ATTRIBUTE_FILTER` 具名常量（白名单 3 项，禁止扩到
+  `style` / `data-dsh-ta-*`）。
+- `apply-plan.ts`：`applyPlan`（参数顺序冻结）+ `ApplyFocus` +
+  `pickColumnSessionId`。`applyFinalThinkMarkers` 仍是 applyPlan 分叉前
+  第一件事；动画分支完全不滚动补偿。
+- `animate.ts`：动画状态单例（animToken / animatingRows / animTimer）+
+  `beginAnimatedTransition` + `prefersReducedMotion`。两处
+  `void documentRef.body.offsetHeight` 同步 reflow 位置不可动（标注
+  DO NOT MOVE）。
+- `row-membership.ts`：`collectSummaries` + `membershipCache` 单例 +
+  remember/hydrate/mergeCached + `pickSummaryRowBySession` + `isUnownedRow`。
+- `row-classify.ts`：`computeRowTargets`（O(N) 反向索引）+ `isFinalThinkRow`
+  + `applyFinalThinkMarkers`。
+- `row-apply.ts`：`applyRowTargets`（`dsh-ta-animating` 跳过）+ `readRowState`。
+- `scroll.ts`：`scrollerOf` / `describeRows` / `flowTop` / `pickAnchor` /
+  `isAtBottom`（`findScrollableAncestor` 模块内私有）。
+- `synth-bars.ts`：`buildSynthBar` / `syncSynthBars` / `CHEVRON_PATH`。
+- `constants.ts`：9 个 `DATA_*` 属性名常量。
+- `types.ts`：`RowDescriptor` / `RowWithElement` / `SummaryRef` 共享类型
+  （零依赖；消除 membership-persist ↔ row-membership 的 type-only 静态环）。
+
+依赖方向单向且无环：`npx madge --circular` 输出空。
+
