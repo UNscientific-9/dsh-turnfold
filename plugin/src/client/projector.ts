@@ -13,165 +13,27 @@
  * DSH theme rule that also sets `display: none`. React re-renders leave the
  * attribute alone, and a rebuilt row (or a reload) is re-marked by the next
  * reconcile.
+ *
+ * 拆分说明（refactor/projector-split）：本文件现在是 facade——只保留
+ * `createProjector` 闭包与其直系（合成条、动画、applyPlan），其余职责已
+ * 迁往 constants / row-membership / row-classify / row-apply / scroll；
+ * 文件末尾的 re-export 维持旧外部 API 不变，外部 import 路径无需改动。
  */
-import { parseChatRowKey } from './row-keys.ts';
 import { computeSyntheticSummaries, synthLabel, type SynthesizedSummary } from './synth.ts';
 import type { CollapseStore } from './store.ts';
-import { readMembershipMap, recordMembershipForPersist } from './membership-persist.ts';
 import { readCurrentSessionId } from './singletons.ts';
-
-export interface RowDescriptor {
-  /** `data-chat-anchor-key` value (`conversationContextKey(kind, id)`). */
-  readonly key: string;
-  /** `data-chat-flow-kind` value; informational fallback only. */
-  readonly kind: string | undefined;
-}
-
-/** A described row bound to its live element. */
-export interface RowWithElement extends RowDescriptor {
-  readonly element: HTMLElement;
-}
-
-/** Membership facts for one completed turn, mirroring the node data the view
- *  renders into `data-dsh-ta-*`. */
-export interface SummaryRef {
-  readonly turn: number;
-  readonly finalStep: number | undefined;
-  readonly toolCallIds: readonly string[];
-  /** Correlated `llm/retry` ids; `model-retry` rows keyed by these ids are
-   *  hidden together with the turn's activity. */
-  readonly retryIds: readonly string[];
-  /** The session this summary row was rendered for; read from the DOM so
-   *  the projector never re-derives session ownership and so two `data-chat-flow`
-   *  columns rendered for different sessions can each apply their own store
-   *  decisions without cross-contamination. */
-  readonly sessionId: string | undefined;
-}
-
-/** Data attributes the React view renders and this projector reads back. */
-export const DATA_TURN = 'data-dsh-ta-turn';
-export const DATA_FINAL_STEP = 'data-dsh-ta-final-step';
-export const DATA_TOOLS = 'data-dsh-ta-tools';
-export const DATA_RETRIES = 'data-dsh-ta-retries';
-export const DATA_THINKING = 'data-dsh-ta-thinking';
-export const DATA_DURATION = 'data-dsh-ta-duration';
-/** Owning session id of the summary row. Optional in the DOM only for
- *  forward-compatibility with rows rendered by an older build that did not
- *  know about multi-column isolation; rows missing the attribute are skipped
- *  during multi-column reconcile (their decisions fall back to the global
- *  projector `sessionId`, which is correct for the single-column case). */
-export const DATA_SESSION = 'data-dsh-ta-session';
-/** Root attribute of a SYNTHESIZED fold bar (synth.ts). Deliberately NOT
- *  `data-dsh-ta-turn`: `collectSummaries` must never mistake a synthesized
- *  bar for an engine-materialized summary row. */
-export const DATA_SYNTH_TURN = 'data-dsh-ta-synth-turn';
-/** Root attribute marking the turn's FINAL answer row while the turn is
- *  collapsed. The row itself stays visible (product rule), but the thinking
- *  block the host renders inside it (a `data-variant="think"` ReasoningRow,
- *  see maintenance.md) is activity and must fold with the turn — CSS hides
- *  it, and clearing the marker on expand restores it. */
-export const DATA_FINAL_COLLAPSED = 'data-dsh-ta-final-collapsed';
-
-/** Read membership facts off the rendered summary rows. */
-export function collectSummaries(column: ParentNode): ReadonlyMap<number, SummaryRef> {
-  const map = new Map<number, SummaryRef>();
-  for (const el of column.querySelectorAll<HTMLElement>(`[${DATA_TURN}]`)) {
-    const turnText = el.getAttribute(DATA_TURN);
-    if (turnText === null || !/^\d+$/.test(turnText)) continue;
-    const turn = Number.parseInt(turnText, 10);
-    const finalStepText = el.getAttribute(DATA_FINAL_STEP);
-    const toolsText = el.getAttribute(DATA_TOOLS) ?? '';
-    const retriesText = el.getAttribute(DATA_RETRIES) ?? '';
-    const sessionId = el.getAttribute(DATA_SESSION);
-    map.set(turn, {
-      turn,
-      finalStep:
-        finalStepText === null || finalStepText === '' || !/^\d+$/.test(finalStepText)
-          ? undefined
-          : Number.parseInt(finalStepText, 10),
-      toolCallIds: toolsText === '' ? [] : toolsText.split(','),
-      retryIds: retriesText === '' ? [] : retriesText.split(','),
-      sessionId: sessionId === null || sessionId === '' ? undefined : sessionId,
-    });
-  }
-  return map;
-}
-
-/**
- * Membership-fact snapshot cache, keyed by session id then turn.
- *
- * The summary row is the DOM source of the membership facts
- * (`data-dsh-ta-*`), but in a paged/windowed conversation the row can be
- * absent from the document while its activity rows are rendered — e.g. the
- * host loads older history pages (`loadOlder`) and the summary row has not
- * been flushed yet, or a future virtualized layout drops off-screen rows.
- * Every time the React view renders a summary it re-records the facts here,
- * so `mergeCached` can keep folding those turns even while their summary row
- * is temporarily (or permanently) missing. Values are stable per turn, so
- * the cache only ever falls back to the same facts the DOM would provide.
- */
-const membershipCache = new Map<string, Map<number, SummaryRef>>();
-const MEMBERSHIP_CACHE_MAX_PER_SESSION = 512;
-
-/** Record one turn's membership facts (called by the summary view). */
-export function rememberMembership(sessionId: string, ref: SummaryRef): void {
-  let byTurn = membershipCache.get(sessionId);
-  if (byTurn === undefined) {
-    byTurn = new Map();
-    membershipCache.set(sessionId, byTurn);
-  }
-  byTurn.set(ref.turn, ref);
-  if (byTurn.size > MEMBERSHIP_CACHE_MAX_PER_SESSION) {
-    // Map iteration order is insertion order; drop the oldest entry.
-    const oldest = byTurn.keys().next().value as number | undefined;
-    if (oldest !== undefined) byTurn.delete(oldest);
-  }
-  // Survive the page: debounce-write the snapshot so a refresh outside the
-  // 50-event window can still fold previously-seen turns with accurate
-  // facts (membership-persist.ts). No-op under Node tests / private mode.
-  recordMembershipForPersist(
-    typeof localStorage !== 'undefined' ? localStorage : undefined,
-    sessionId,
-    ref,
-  );
-}
-
-/**
- * Restore persisted membership snapshots into the in-memory cache (once,
- * at plugin mount). Existing entries win — a live render is fresher than
- * the persisted record.
- */
-export function hydrateMembership(storage: Storage | undefined): void {
-  for (const [sessionId, byTurn] of readMembershipMap(storage)) {
-    let target = membershipCache.get(sessionId);
-    if (target === undefined) {
-      target = new Map();
-      membershipCache.set(sessionId, target);
-    }
-    for (const [turn, ref] of byTurn) {
-      if (!target.has(turn)) target.set(turn, ref);
-    }
-  }
-}
-
-/**
- * Merge the DOM-collected summaries with the cached membership facts for the
- * column's owner session. DOM facts win (they are the freshest render);
- * cached facts fill in turns whose summary row is not in the document.
- */
-export function mergeCached(
-  summaries: ReadonlyMap<number, SummaryRef>,
-  sessionId: string | null,
-): Map<number, SummaryRef> {
-  const merged = new Map(summaries);
-  if (sessionId === null) return merged;
-  const cached = membershipCache.get(sessionId);
-  if (cached === undefined) return merged;
-  for (const [turn, ref] of cached) {
-    if (!merged.has(turn)) merged.set(turn, ref);
-  }
-  return merged;
-}
+import { DATA_SESSION, DATA_SYNTH_TURN, DATA_TURN } from './constants.ts';
+import {
+  collectSummaries,
+  isUnownedRow,
+  mergeCached,
+  pickSummaryRowBySession,
+  type RowWithElement,
+  type SummaryRef,
+} from './row-membership.ts';
+import { applyFinalThinkMarkers, computeRowTargets } from './row-classify.ts';
+import { applyRowTargets } from './row-apply.ts';
+import { describeRows, flowTop, isAtBottom, pickAnchor, scrollerOf } from './scroll.ts';
 
 /** DOM attribute -> fold bar root for synthesized turns. */
 function synthBarSelector(turn: number): string {
@@ -263,235 +125,6 @@ export function syncSynthBars(
     if (button !== null) button.setAttribute('aria-expanded', String(!collapsed));
     if (label !== null && label.textContent !== text) label.textContent = text;
   }
-}
-
-const ASSISTANT_ID = /^(\d+):(\d+)$/;
-
-/**
- * Decide the hide target for every row. Pure: no DOM access, no store access
- * beyond the injected `isCollapsed` predicate. Rows outside any summarized
- * turn and rows of unrelated kinds are never touched.
- * @returns a Map from the exact row objects passed in to their hide target.
- */
-export function computeRowTargets<Row extends RowWithElement>(
-  rows: readonly Row[],
-  summaries: ReadonlyMap<number, SummaryRef>,
-  isCollapsed: (turn: number) => boolean,
-): ReadonlyMap<Row, boolean> {
-  // Reverse indexes: `tool-call` / `model-retry` rows carry only a random id,
-  // and ownership is decided by scanning every summary's id list. Pre-building
-  // id -> turn turns that O(rows × turns × ids) scan into O(rows) lookups —
-  // the per-click cost of toggling grows with the conversation, which the
-  // user feels as a delayed response. First write wins, mirroring the old
-  // "first matching summary" loop order (summaries iterate in insertion
-  // order: DOM, then cache, then synth).
-  const toolOwner = new Map<string, number>();
-  const retryOwner = new Map<string, number>();
-  for (const [turn, summary] of summaries) {
-    for (const id of summary.toolCallIds) if (!toolOwner.has(id)) toolOwner.set(id, turn);
-    for (const id of summary.retryIds) if (!retryOwner.has(id)) retryOwner.set(id, turn);
-  }
-  const targets = new Map<Row, boolean>();
-  for (const row of rows) {
-    const parsed = parseChatRowKey(row.key);
-    if (parsed === null) {
-      targets.set(row, false);
-      continue;
-    }
-    if (parsed.kind === 'assistant-step') {
-      const match = ASSISTANT_ID.exec(parsed.id);
-      if (match === null) {
-        targets.set(row, false);
-        continue;
-      }
-      const turn = Number(match[1]);
-      const step = Number(match[2]);
-      const summary = summaries.get(turn);
-      if (summary === undefined) {
-        targets.set(row, false);
-        continue;
-      }
-      // The final answer row is never hidden, even while collapsed.
-      const isFinal = summary.finalStep !== undefined && step === summary.finalStep;
-      targets.set(row, !isFinal && isCollapsed(turn));
-      continue;
-    }
-    if (parsed.kind === 'tool-call') {
-      const turn = toolOwner.get(parsed.id);
-      targets.set(row, turn !== undefined && isCollapsed(turn));
-      continue;
-    }
-    if (parsed.kind === 'model-retry') {
-      // A retry notice row keyed by its random `retryId` (no turn/step
-      // info); ownership comes exclusively from the summary's published
-      // retry ids. Without this branch the retry block stays visible in the
-      // middle of a collapsed turn — the "missing fold" gap.
-      const turn = retryOwner.get(parsed.id);
-      targets.set(row, turn !== undefined && isCollapsed(turn));
-      continue;
-    }
-    targets.set(row, false);
-  }
-  return targets;
-}
-
-export interface CollapseMarkerRow {
-  readonly key: string;
-  readonly kind: string | undefined;
-  readonly display: string;
-  readonly marked: boolean;
-}
-
-/**
- * True when a row is the FINAL answer row of a turn that is currently
- * collapsed. The final row itself is never hidden (product rule), but its
- * in-row thinking block must fold with the activity; `applyFinalThinkMarkers`
- * marks exactly these rows so CSS can hide `[data-variant="think"]` inside
- * them. Uses the merged summaries (real + cached + synthesized), so
- * window-cut turns get the same treatment.
- */
-export function isFinalThinkRow(
-  row: RowWithElement,
-  summaries: ReadonlyMap<number, SummaryRef>,
-  isCollapsed: (turn: number) => boolean,
-): boolean {
-  const parsed = parseChatRowKey(row.key);
-  if (parsed === null || parsed.kind !== 'assistant-step') return false;
-  const match = ASSISTANT_ID.exec(parsed.id);
-  if (match === null) return false;
-  const turn = Number(match[1]);
-  const step = Number(match[2]);
-  const summary = summaries.get(turn);
-  return summary?.finalStep === step && isCollapsed(turn);
-}
-
-/**
- * Apply/clear the final-think marker on every row, idempotent. Called from
- * `applyPlan` BEFORE the fold/unfold branch: the marker must land on every
- * path — including the animated user-toggle branch, which hands the activity
- * rows to `beginAnimatedTransition` and never runs `applyRowTargets`.
- */
-export function applyFinalThinkMarkers(
-  rows: readonly RowWithElement[],
-  summaries: ReadonlyMap<number, SummaryRef>,
-  isCollapsed: (turn: number) => boolean,
-): void {
-  for (const row of rows) {
-    const want = isFinalThinkRow(row, summaries, isCollapsed);
-    const has = row.element.dataset.dshTaFinalCollapsed === 'true';
-    if (want !== has) {
-      if (want) row.element.dataset.dshTaFinalCollapsed = 'true';
-      else delete row.element.dataset.dshTaFinalCollapsed;
-    }
-  }
-}
-
-/** Current visual state of one row, read by the applying layer. */
-export function readRowState(row: HTMLElement): CollapseMarkerRow {
-  return {
-    key: row.dataset.chatAnchorKey ?? '',
-    kind: row.dataset.chatFlowKind,
-    display: row.style.display,
-    marked: row.dataset.dshTaCollapsed === 'true',
-  };
-}
-
-/**
- * Apply targets to real rows. Hiding is driven by a data attribute whose
- * matching CSS rule (`[data-dsh-ta-collapsed="true"] { display: none
- * !important }` in styles.ts) wins over any DSH theme rule that also sets
- * `display: none`, so the projector never has to second-guess an inline
- * style or a class added by the host. Returns whether anything changed.
- *
- * Rows currently animating a fold/unfold (class `dsh-ta-animating`) are
- * skipped: the animation owns their final marker and applies it when it
- * completes; a background reconcile must not yank them to the end state
- * mid-transition.
- */
-export function applyRowTargets(
-  rows: readonly RowWithElement[],
-  targets: ReadonlyMap<RowWithElement, boolean>,
-): boolean {
-  let changed = false;
-  for (const row of rows) {
-    const hide = targets.get(row) ?? false;
-    const element = row.element;
-    const state = readRowState(element);
-    if (hide !== state.marked) {
-      if (element.classList.contains('dsh-ta-animating')) continue;
-      if (hide) element.dataset.dshTaCollapsed = 'true';
-      else delete element.dataset.dshTaCollapsed;
-      changed = true;
-    }
-  }
-  return changed;
-}
-
-/**
- * The chat scroller: same rule as the conversation view
- * (`data-conversation-scroll`). When the host has not marked the column (e.g.
- * a future virtualized layout with the scroll on a higher ancestor), walk up
- * the DOM tree looking for any ancestor with a scrollable overflow; fall
- * back to the column itself so the compensation math is still well-defined.
- */
-export function scrollerOf(from: HTMLElement): HTMLElement {
-  const marked = from.closest('[data-conversation-scroll]');
-  if (marked !== null) return marked as HTMLElement;
-  return findScrollableAncestor(from) ?? from;
-}
-
-function findScrollableAncestor(el: HTMLElement): HTMLElement | null {
-  let current: HTMLElement | null = el.parentElement;
-  while (current !== null) {
-    const style = getComputedStyle(current);
-    if (
-      style.overflowY === 'auto' ||
-      style.overflowY === 'scroll' ||
-      style.overflowX === 'auto' ||
-      style.overflowX === 'scroll'
-    ) {
-      return current;
-    }
-    current = current.parentElement;
-  }
-  return null;
-}
-
-/** Bind every anchor-keyed row to its parsed identity. */
-function describeRows(column: HTMLElement): RowWithElement[] {
-  return [...column.querySelectorAll<HTMLElement>('[data-chat-anchor-key]')].map(
-    (element) => ({
-      key: element.dataset.chatAnchorKey ?? '',
-      kind: element.dataset.chatFlowKind,
-      element,
-    }),
-  );
-}
-
-/** Row position in scrollport coordinates (viewport-independent). */
-function flowTop(row: HTMLElement, scrollport: HTMLElement): number {
-  return row.getBoundingClientRect().top - scrollport.getBoundingClientRect().top;
-}
-
-/** First row whose box is at or below the scrollport top, skipping rows this
- *  operation will change (they may vanish mid-measurement). */
-function pickAnchor(
-  rows: readonly RowWithElement[],
-  scrollport: HTMLElement,
-  changing: ReadonlySet<HTMLElement>,
-): HTMLElement | null {
-  const viewportTop = scrollport.getBoundingClientRect().top;
-  for (const row of rows) {
-    if (changing.has(row.element)) continue;
-    if (row.element.getBoundingClientRect().bottom > viewportTop) return row.element;
-  }
-  return null;
-}
-
-/** DSH's own "at bottom" threshold; while at bottom its follow logic owns the
- *  viewport and our compensation would fight it. */
-function isAtBottom(scrollport: HTMLElement): boolean {
-  return scrollport.scrollTop + scrollport.clientHeight >= scrollport.scrollHeight - 25;
 }
 
 /**
@@ -801,34 +434,6 @@ function pickColumnSessionId(
   return null;
 }
 
-/** Pick the rendered summary row that owns a turn number. Each session numbers
- *  its turns independently, so several chat-flow columns can render the same
- *  turn number at the same time; prefer the row whose `data-dsh-ta-session`
- *  matches the caller's session, falling back to the first row when no row
- *  matches (a legacy row without the attribute, or a stale caller session) —
- *  which reproduces the old single-column behavior. */
-export function pickSummaryRowBySession(
-  rows: readonly HTMLElement[],
-  session: string | null,
-): HTMLElement | null {
-  let fallback: HTMLElement | null = null;
-  for (const row of rows) {
-    if (fallback === null) fallback = row;
-    if (session !== null && row.getAttribute(DATA_SESSION) === session) return row;
-  }
-  return fallback;
-}
-
-/** True for rows the projector intentionally leaves alone: every kind the
- *  row-key grammar recognises except `assistant-step` and `tool-call` (the
- *  two collapsible activity kinds). Used only by the debug hook to surface
- *  rows that might be missed (e.g. the unresolved `model-retry`). */
-function isUnownedRow(row: RowWithElement): boolean {
-  const parsed = parseChatRowKey(row.key);
-  if (parsed === null) return false;
-  return parsed.kind !== 'assistant-step' && parsed.kind !== 'tool-call';
-}
-
 export function createProjector(
   document: Document,
   store: CollapseStore,
@@ -1088,3 +693,46 @@ export function createProjector(
     },
   };
 }
+
+// ── facade re-export ─────────────────────────────────────────────
+// 拆分后本文件只保留 createProjector 闭包与其直系（合成条 / 动画 /
+// applyPlan），行归属职责已迁往 constants / row-membership /
+// row-classify / row-apply / scroll。以下 re-export 维持旧外部 API 不变：
+// summary-view.tsx、index.ts、singletons.ts、membership-persist.ts 与
+// test/ 的 import 路径都无需改动。
+export {
+  DATA_TURN,
+  DATA_FINAL_STEP,
+  DATA_TOOLS,
+  DATA_RETRIES,
+  DATA_THINKING,
+  DATA_DURATION,
+  DATA_SESSION,
+  DATA_SYNTH_TURN,
+  DATA_FINAL_COLLAPSED,
+} from './constants.ts';
+
+export {
+  collectSummaries,
+  rememberMembership,
+  hydrateMembership,
+  mergeCached,
+  pickSummaryRowBySession,
+  type RowDescriptor,
+  type RowWithElement,
+  type SummaryRef,
+} from './row-membership.ts';
+
+export {
+  computeRowTargets,
+  isFinalThinkRow,
+  applyFinalThinkMarkers,
+} from './row-classify.ts';
+
+export {
+  applyRowTargets,
+  readRowState,
+  type CollapseMarkerRow,
+} from './row-apply.ts';
+
+export { scrollerOf } from './scroll.ts';

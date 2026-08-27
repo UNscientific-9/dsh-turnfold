@@ -1,8 +1,8 @@
 /**
  * Persisted membership snapshots (localStorage-backed, injectable storage).
  *
- * The in-memory membership cache (projector.ts) dies with the page; after a
- * refresh the 50-event window only replays the newest turns, so turns seen
+ * The in-memory membership cache (row-membership.ts) dies with the page; after
+ * a refresh the 50-event window only replays the newest turns, so turns seen
  * before the refresh but outside the window would lose their accurate
  * facts (final step, tool/retry ids) and fall back to synthesized guesses.
  * Persisting the snapshots closes that gap: on mount the plugin rehydrates
@@ -15,7 +15,9 @@
  * cannot grow the record without bound. Writes are debounced — the React
  * view re-renders summaries frequently and each render re-records facts.
  */
-import type { SummaryRef } from './projector.ts';
+// type-only：运行时 row-membership 依赖本模块（readMembershipMap /
+// recordMembershipForPersist），类型反向引用不会形成运行时环。
+import type { SummaryRef } from './row-membership.ts';
 
 export const MEMBERSHIP_STORAGE_KEY = 'dsh.turn-collapse.membership.v1';
 
