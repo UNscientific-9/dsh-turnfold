@@ -20,7 +20,7 @@ npm run build                  # powershell -NoProfile -ExecutionPolicy Bypass -
 ```
 
 - 跑单个测试文件：`node --test --test-isolation=none test/<name>.test.ts`（沙箱禁止 spawn，`--test-isolation=none` 必须保留）。
-- 测试用 Node 内置 `node:test`（34 个用例：状态机含 step/end / llm/retry 锚点回归、归属、持久化、格式化、key 解析），只测纯逻辑模块，无 DOM 测试。测试直接 import `../src/**/*.ts`（依赖 `allowImportingTsExtensions`）。
+- 测试用 Node 内置 `node:test`（57 个用例：状态机含 step/end / llm/retry 锚点回归、归属、持久化、格式化、key 解析、final-think 标记），只测纯逻辑模块，无 DOM 测试。测试直接 import `../src/**/*.ts`（依赖 `allowImportingTsExtensions`）。
 - `build.ps1` 直接调用 `esbuild.exe`/`tsc`，不走 Node `child_process.spawn`（DSH 沙箱禁止）；`lib/` 是 gitignored 的构建产物。
 - 代码注释、文档、提交均用中文。
 

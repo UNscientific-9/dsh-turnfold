@@ -30,10 +30,15 @@ reason kind，需决定是否纳入“不折叠”集合（默认：除 `complet
 
 - 行根 `[data-chat-anchor-key]`（值 = 上述 key）、`[data-chat-flow-kind]`
 - 容器 `[data-chat-flow]`；滚动容器 `[data-conversation-scroll]`
+- 行内思考块 root `[data-variant="think"]`（ReasoningRow，assistant-step 行
+  内部；折叠轮次的 final 行靠它隐藏思考摘要，见 `architecture.md` 决策 11）
 
 适配检查：若 `ChatNodeSeat` 移除这些属性（改用其他定位方式），先给行打上
 `data-dsh-ta-*` 标记不可行（那是 React 域），应改为在节点 data 中发布成员事实并
 通过 `useSession` 读取——`projector.ts` 的 `collectSummaries` 是唯一读取点，集中修改。
+若 `data-variant="think"` 改名/移除（ReasoningRow 重构），折叠态 final 行会重新
+露出思考摘要——检查 `styles.ts` 的
+`[data-dsh-ta-final-collapsed="true"] [data-variant="think"]` 规则是否仍生效。
 
 ### 4. 样式令牌
 
@@ -52,7 +57,7 @@ reason kind，需决定是否纳入“不折叠”集合（默认：除 `complet
 
 ## 回归建议
 
-- `npm test`（26 用例：状态机、行归属、持久化、格式化）
+- `npm test`（57 用例：状态机、行归属、持久化、格式化、final-think 标记）
 - 手测矩阵（见 `../README.md` 行为规则表）：正常成功、tool error、用户 Stop、
   approval waiting、空 final、刷新恢复、窄窗口、light/dark、键盘操作、
   50+/100+ 行长 turn。

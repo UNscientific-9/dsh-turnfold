@@ -36,6 +36,11 @@ export const TURN_ACTIVITY_CSS = `
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-interactive-bg-hover-solid);
 }
+/* Click feedback: darken the chip the moment the pointer goes down, so the
+ * toggle answers the click before the fold animation starts. */
+.dsh-ta-toggle:active {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+}
 .dsh-ta-toggle:focus-visible {
   outline: none;
   box-shadow: inset 0 0 0 2px var(--dsw-alias-border-l3);
@@ -70,6 +75,14 @@ export const TURN_ACTIVITY_CSS = `
 [data-dsh-ta-collapsed="true"] {
   display: none !important;
 }
+/* Final answer row of a collapsed turn: the row itself stays visible, but
+ * the thinking block the host renders inside it (ReasoningRow, marked
+ * data-variant="think" by DSH — see maintenance.md) is activity and must
+ * fold with the turn. The marker is projector-managed, like the collapse
+ * marker above. */
+[data-dsh-ta-final-collapsed="true"] [data-variant="think"] {
+  display: none;
+}
 /* Rows mid fold/unfold animation: height/margin/opacity are driven inline by
  * the projector; the class only supplies the transition and clips overflow
  * (a shrinking row's content would otherwise spill during the fold). The
@@ -89,36 +102,6 @@ export const TURN_ACTIVITY_CSS = `
   .dsh-ta-animating {
     transition: none;
   }
-}
-/* Floating bulk controls (collapse-all / expand-all): a small chip stack
- * pinned to the right viewport edge, above the composer zone. */
-.dsh-ta-bulk {
-  position: fixed;
-  right: 14px;
-  bottom: 132px;
-  z-index: 60;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  opacity: 0.72;
-  transition: opacity 120ms ease;
-}
-.dsh-ta-bulk:hover {
-  opacity: 1;
-}
-.dsh-ta-bulk-btn {
-  border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-layer-2, var(--dsw-alias-interactive-bg-hover));
-  color: var(--dsw-alias-label-secondary);
-  font: inherit;
-  font-size: 12px;
-  line-height: 18px;
-  padding: 4px 8px;
-  border-radius: 8px;
-  cursor: pointer;
-}
-.dsh-ta-bulk-btn:hover {
-  color: var(--dsw-alias-label-primary);
 }
 `;
 

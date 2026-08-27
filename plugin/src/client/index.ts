@@ -8,11 +8,10 @@ import type { Context } from '@deepseek-ai/cordis';
 // Loads the `@deepseek-ai/cordis` Context augmentation that declares `locale`.
 import type {} from '@deepseek-ai/dsh-client-locale/client';
 import { setAutoLoadSessions, startAutoLoad, type AutoLoadSessions } from './auto-load.ts';
-import { ensureBulkControls } from './bulk-controls.ts';
 import { TURN_ACTIVITY_KIND } from './activity-state.ts';
 import { en, NS, zh } from './locales.ts';
 import { hydrateMembership } from './projector.ts';
-import { getProjector, getStore, setCurrentSessionReader } from './singletons.ts';
+import { getProjector, setCurrentSessionReader } from './singletons.ts';
 import { ensureStyles } from './styles.ts';
 import { TurnActivityNodeView } from './summary-view.tsx';
 import { createTurnActivityDefinition } from './turn-activity.ts';
@@ -22,7 +21,7 @@ export const inject = ['slots', 'locale', 'conversationEvents'];
 
 /** Bumped with every shipped change: shows up once in the browser console
  *  so a stale bundle (DSH serves the pnpm-installed copy) is obvious. */
-export const CLIENT_VERSION = '0.2.6';
+export const CLIENT_VERSION = '0.2.7';
 
 export function apply(ctx: Context): void {
   // One-shot load marker: makes "which bundle is the browser running"
@@ -114,20 +113,7 @@ export function apply(ctx: Context): void {
       const stopAutoLoad = startAutoLoad(document);
       const projector = getProjector();
       projector.start();
-      // Bulk fold controls: re-evaluated on every store change so they
-      // appear only while at least one fold bar exists.
-      const refreshBulk = (): void =>
-        ensureBulkControls(
-          document,
-          () =>
-            document.querySelector('[data-dsh-ta-turn], [data-dsh-ta-synth-turn]') !== null,
-          () => projector.bulkCollapse(true),
-          () => projector.bulkCollapse(false),
-        );
-      refreshBulk();
-      const unsubscribeBulk = getStore().subscribe(refreshBulk);
       return () => {
-        unsubscribeBulk();
         stopAutoLoad();
         projector.stop();
       };

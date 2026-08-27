@@ -71,6 +71,7 @@ ScrollAnchor（用户 toggle：展开定位到该轮第一个活动行、折叠�
 |---|---|---|
 | summary 行根 | `data-dsh-ta-turn` / `data-dsh-ta-final-step` / `data-dsh-ta-tools`（逗号分隔 callId）/ `data-dsh-ta-thinking` / `data-dsh-ta-duration` | 成员事实（projector 读取，避免二次语义推断） |
 | activity 行 | `data-dsh-ta-collapsed="true"` + `style.display:none` | 折叠标记；React 重渲染/行重建后由 reconcile 幂等重应用 |
+| final 行（折叠轮） | `data-dsh-ta-final-collapsed="true"` | 该轮折叠时标记其最终回答行，CSS 隐藏行内 Think 块（`data-variant="think"`，见 `maintenance.md`）；展开清除 |
 | `<head>` | `<style data-plugin-css="@dsh-plan/turn-collapse/styles">` | 插件样式（幂等注入） |
 
 ## 关键设计决策
@@ -150,6 +151,13 @@ ScrollAnchor（用户 toggle：展开定位到该轮第一个活动行、折叠�
     `scrollTop ≤ 4px`，连续加载按 0→400ms→1s 退避（防长会话灌页卡顿），
     滚离顶部重置节奏；`localStorage['dsh.turn-collapse.autoLoad']='0'`
     关闭。与决策 9 组合：往上滚 = 历史自动加载且自动收成结论流。
-11. **全局一键折叠/展开（v0.2.0，`bulk-controls.ts`）**：视口右缘浮动
-    chip；“全部折叠”保留每列最新一轮展开（当前结论可见），逐轮写 store
-    决策（与手动 toggle 同持久化），瞬时应用不动画。
+11. **折叠时隐藏最终回答行内的思考块（v0.2.7）**：最终回答行永不隐藏
+    （决策 1/4），但 DSH 把思考渲染在该行**内部**（ReasoningRow，root 带
+    稳定 `data-variant="think"`），折叠后其摘要仍可见。projector 对折叠轮
+    的 final 行打 `data-dsh-ta-final-collapsed` 标记，CSS 隐藏行内
+    `[data-variant="think"]`，展开清除——与折叠标记同机制（幂等 reconcile
+    重应用），不动 applyRowTargets 签名（动画分支经 beginAnimatedTransition
+    返回，标记在 applyPlan 分支前独立应用）。
+12. **点击响应性能（v0.2.7）**：行归属索引化（tool-call/model-retry 按
+    id→turn 反向索引，O(行数×轮数) → O(行数)）；折叠动画批量测量
+    （先统一读 offsetHeight 一次 layout，再统一写样式，N 次 → 2 次）。

@@ -4,6 +4,7 @@ import {
   collectSummaries,
   computeRowTargets,
   DATA_SESSION,
+  isFinalThinkRow,
   mergeCached,
   pickSummaryRowBySession,
   rememberMembership,
@@ -95,6 +96,44 @@ test('malformed keys are treated as untouchable', () => {
   const rows = [row(''), row('garbage'), row('3:xx')];
   const targets = computeRowTargets(rows, summaries, () => true);
   assert.deepEqual(rows.map((r) => targets.get(r)), [false, false, false]);
+});
+
+test('isFinalThinkRow marks only the final row of a collapsed turn', () => {
+  // The final answer row stays visible when collapsed (product rule), but
+  // the host renders the thinking block inside it — the marker lets CSS hide
+  // that block so the fold is clean.
+  const summaries = collectFrom([
+    { 'data-dsh-ta-turn': 5, 'data-dsh-ta-final-step': 3, 'data-dsh-ta-tools': '' },
+    { 'data-dsh-ta-turn': 6, 'data-dsh-ta-final-step': 1, 'data-dsh-ta-tools': '' },
+  ]);
+  const rows = [
+    row('14:assistant-step5:3'), // turn 5 final row — collapsed, must be marked
+    row('14:assistant-step5:2'), // turn 5 activity row — hidden anyway, not a final
+    row('14:assistant-step6:1'), // turn 6 final row — expanded, NOT marked
+    row('9:turn-tail5'),
+  ];
+  const collapsed5 = (turn: number): boolean => turn === 5;
+  assert.deepEqual(rows.map((r) => isFinalThinkRow(r, summaries, collapsed5)), [true, false, false, false]);
+  // No turn collapsed: nothing is marked.
+  assert.deepEqual(rows.map((r) => isFinalThinkRow(r, summaries, () => false)), [false, false, false, false]);
+});
+
+test('isFinalThinkRow guards unknown turns and malformed rows', () => {
+  const summaries = collectFrom([
+    { 'data-dsh-ta-turn': 5, 'data-dsh-ta-final-step': 3, 'data-dsh-ta-tools': '' },
+    // finalStep undefined (turn ended with trailing tool activity): no final
+    // answer row exists, so nothing can be marked.
+    { 'data-dsh-ta-turn': 7, 'data-dsh-ta-final-step': '', 'data-dsh-ta-tools': '' },
+  ]);
+  const rows = [
+    row('14:assistant-step5:3'), // marked
+    row('14:assistant-step8:0'), // no summary for turn 8
+    row('14:assistant-step7:1'), // summary has no finalStep
+    row('9:tool-callc1'), // not an assistant-step row
+    row(''), // unparseable key
+  ];
+  const targets = rows.map((r) => isFinalThinkRow(r, summaries, () => true));
+  assert.deepEqual(targets, [true, false, false, false, false]);
 });
 
 test('mergeCached fills in turns whose summary row is missing from the DOM', () => {

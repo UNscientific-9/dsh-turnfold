@@ -65,6 +65,12 @@ export const DATA_SESSION = 'data-dsh-ta-session';
  *  `data-dsh-ta-turn`: `collectSummaries` must never mistake a synthesized
  *  bar for an engine-materialized summary row. */
 export const DATA_SYNTH_TURN = 'data-dsh-ta-synth-turn';
+/** Root attribute marking the turn's FINAL answer row while the turn is
+ *  collapsed. The row itself stays visible (product rule), but the thinking
+ *  block the host renders inside it (a `data-variant="think"` ReasoningRow,
+ *  see maintenance.md) is activity and must fold with the turn — CSS hides
+ *  it, and clearing the marker on expand restores it. */
+export const DATA_FINAL_COLLAPSED = 'data-dsh-ta-final-collapsed';
 
 /** Read membership facts off the rendered summary rows. */
 export function collectSummaries(column: ParentNode): ReadonlyMap<number, SummaryRef> {
@@ -272,6 +278,19 @@ export function computeRowTargets<Row extends RowWithElement>(
   summaries: ReadonlyMap<number, SummaryRef>,
   isCollapsed: (turn: number) => boolean,
 ): ReadonlyMap<Row, boolean> {
+  // Reverse indexes: `tool-call` / `model-retry` rows carry only a random id,
+  // and ownership is decided by scanning every summary's id list. Pre-building
+  // id -> turn turns that O(rows × turns × ids) scan into O(rows) lookups —
+  // the per-click cost of toggling grows with the conversation, which the
+  // user feels as a delayed response. First write wins, mirroring the old
+  // "first matching summary" loop order (summaries iterate in insertion
+  // order: DOM, then cache, then synth).
+  const toolOwner = new Map<string, number>();
+  const retryOwner = new Map<string, number>();
+  for (const [turn, summary] of summaries) {
+    for (const id of summary.toolCallIds) if (!toolOwner.has(id)) toolOwner.set(id, turn);
+    for (const id of summary.retryIds) if (!retryOwner.has(id)) retryOwner.set(id, turn);
+  }
   const targets = new Map<Row, boolean>();
   for (const row of rows) {
     const parsed = parseChatRowKey(row.key);
@@ -298,14 +317,8 @@ export function computeRowTargets<Row extends RowWithElement>(
       continue;
     }
     if (parsed.kind === 'tool-call') {
-      let hide = false;
-      for (const summary of summaries.values()) {
-        if (summary.toolCallIds.includes(parsed.id)) {
-          hide = isCollapsed(summary.turn);
-          break;
-        }
-      }
-      targets.set(row, hide);
+      const turn = toolOwner.get(parsed.id);
+      targets.set(row, turn !== undefined && isCollapsed(turn));
       continue;
     }
     if (parsed.kind === 'model-retry') {
@@ -313,14 +326,8 @@ export function computeRowTargets<Row extends RowWithElement>(
       // info); ownership comes exclusively from the summary's published
       // retry ids. Without this branch the retry block stays visible in the
       // middle of a collapsed turn — the "missing fold" gap.
-      let hide = false;
-      for (const summary of summaries.values()) {
-        if (summary.retryIds.includes(parsed.id)) {
-          hide = isCollapsed(summary.turn);
-          break;
-        }
-      }
-      targets.set(row, hide);
+      const turn = retryOwner.get(parsed.id);
+      targets.set(row, turn !== undefined && isCollapsed(turn));
       continue;
     }
     targets.set(row, false);
@@ -333,6 +340,53 @@ export interface CollapseMarkerRow {
   readonly kind: string | undefined;
   readonly display: string;
   readonly marked: boolean;
+}
+
+/**
+ * True when a row is the FINAL answer row of a turn that is currently
+ * collapsed. The final row itself is never hidden (product rule), but its
+ * in-row thinking block must fold with the activity; `applyFinalThinkMarkers`
+ * marks exactly these rows so CSS can hide `[data-variant="think"]` inside
+ * them. Uses the merged summaries (real + cached + synthesized), so
+ * window-cut turns get the same treatment.
+ */
+export function isFinalThinkRow(
+  row: RowWithElement,
+  summaries: ReadonlyMap<number, SummaryRef>,
+  isCollapsed: (turn: number) => boolean,
+): boolean {
+  const parsed = parseChatRowKey(row.key);
+  if (parsed === null || parsed.kind !== 'assistant-step') return false;
+  const match = ASSISTANT_ID.exec(parsed.id);
+  if (match === null) return false;
+  const turn = Number(match[1]);
+  const step = Number(match[2]);
+  const summary = summaries.get(turn);
+  return summary?.finalStep === step && isCollapsed(turn);
+}
+
+/**
+ * Apply/clear the final-think marker on every row, idempotent. Called from
+ * `applyPlan` BEFORE the fold/unfold branch: the marker must land on every
+ * path — including the animated user-toggle branch, which hands the activity
+ * rows to `beginAnimatedTransition` and never runs `applyRowTargets`.
+ */
+export function applyFinalThinkMarkers(
+  rows: readonly RowWithElement[],
+  summaries: ReadonlyMap<number, SummaryRef>,
+  isCollapsed: (turn: number) => boolean,
+): boolean {
+  let changed = false;
+  for (const row of rows) {
+    const want = isFinalThinkRow(row, summaries, isCollapsed);
+    const has = row.element.dataset.dshTaFinalCollapsed === 'true';
+    if (want !== has) {
+      if (want) row.element.dataset.dshTaFinalCollapsed = 'true';
+      else delete row.element.dataset.dshTaFinalCollapsed;
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 /** Current visual state of one row, read by the applying layer. */
@@ -519,9 +573,15 @@ function beginAnimatedTransition(
     // Fold: rows are visible at their rendered height; pin the start state
     // then transition height/opacity to zero. `offsetHeight` (not
     // `scrollHeight`) so internally capped blocks keep their rendered size.
+    // Measure ALL rows before writing any style: a read after each write
+    // forces a separate layout pass per row (heavy tool cards make that
+    // measurably slow on click — the "delayed reaction" the user reported),
+    // while one batched read costs a single pass.
+    const heights = new Map<HTMLElement, string>();
+    for (const el of els) heights.set(el, `${el.offsetHeight}px`);
     for (const el of els) {
       el.classList.add('dsh-ta-animating');
-      el.style.height = `${el.offsetHeight}px`;
+      el.style.height = heights.get(el) ?? '0px';
       el.style.marginBottom = '0px';
       el.style.opacity = '1';
     }
@@ -535,12 +595,12 @@ function beginAnimatedTransition(
     // Rows are display:none; reveal them at zero height, measure the
     // RENDERED height (`offsetHeight` — read right after the reveal, in the
     // same task, so the browser never paints the full-size intermediate),
-    // then grow to it.
+    // then grow to it. Batched read before any write, same one-layout rule
+    // as the fold direction.
     for (const el of els) delete el.dataset.dshTaCollapsed;
     const heights = new Map<HTMLElement, string>();
+    for (const el of els) heights.set(el, `${el.offsetHeight}px`);
     for (const el of els) {
-      const full = `${el.offsetHeight}px`;
-      heights.set(el, full);
       el.classList.add('dsh-ta-animating');
       el.style.height = '0px';
       el.style.marginBottom = `${-COLUMN_GAP_PX}px`;
@@ -609,14 +669,6 @@ export interface TurnActivityProjector {
   ): void;
   /** Reconcile every recorded decision; rAF-merged, idempotent. */
   reconcile(): void;
-  /**
-   * Fold (or unfold) every known turn of every column at once. Collapsing
-   * keeps the LATEST turn of each column expanded (the conversation's
-   * current conclusion stays visible). Applies instantly — no animation
-   * across dozens of turns — and writes a decision per turn so the bulk
-   * action survives refreshes like any other toggle.
-   */
-  bulkCollapse(collapsed: boolean): void;
 }
 
 /**
@@ -667,6 +719,11 @@ function applyPlan(
   focus: ApplyFocus | null,
 ): void {
   const targets = computeRowTargets(rows, summaries, isCollapsed);
+  // The final answer row stays visible, but its in-row thinking block folds
+  // with the turn. Applied on every path — including the animated
+  // user-toggle branch, which hands the activity rows to
+  // beginAnimatedTransition and never runs applyRowTargets.
+  applyFinalThinkMarkers(rows, summaries, isCollapsed);
   // Classify the rows this plan actually changes (before applying, since the
   // data attributes flip during the apply).
   const unhideRows: HTMLElement[] = [];
@@ -840,7 +897,6 @@ export function createProjector(
   const applyAll = (compensate: boolean): void => {
     const columns = document.querySelectorAll<HTMLElement>('[data-chat-flow]');
     if (columns.length === 0) return;
-    const diagReports: Record<string, unknown>[] = [];
     const debugEnabled =
       typeof localStorage !== 'undefined' &&
       localStorage.getItem('dsh.turn-collapse.debug') === '1';
@@ -859,7 +915,6 @@ export function createProjector(
         if (debugEnabled) {
           debugReports.push({ flow: column.getAttribute('data-chat-flow') ?? '?', summaries: domSummaries.size, hiddenRows: 0, unowned: [], note: 'no column session' });
         }
-        diagReports.push({ flow: column.getAttribute('data-chat-flow') ?? '?', note: 'no column session', real: domSummaries.size, synth: [] });
         continue;
       }
       const columnSessionId = ownerSessionId;
@@ -869,7 +924,6 @@ export function createProjector(
         if (debugEnabled) {
           debugReports.push({ flow: column.getAttribute('data-chat-flow') ?? '?', summaries: 0, hiddenRows: 0, unowned: [] });
         }
-        diagReports.push({ flow: column.getAttribute('data-chat-flow') ?? '?', session: columnSessionId, real: domSummaries.size, synth: [] });
         continue;
       }
       // Synthesized fold bars: default-collapse once (user-approved policy),
@@ -913,24 +967,10 @@ export function createProjector(
           unowned,
         });
       }
-      diagReports.push({
-        flow: column.getAttribute('data-chat-flow') ?? '?',
-        session: columnSessionId,
-        real: domSummaries.size,
-        synth: [...synth.keys()],
-        decisions: summaries.size > 0
-          ? Object.fromEntries([...summaries.keys()].map((t) => [t, store.getCollapsed(columnSessionId, t) ?? 'undecided']))
-          : {},
-      });
       applyPlan(column, scrollerOf(column), rows, summaries, isCollapsed, compensate, null);
     }
     if (debugEnabled && debugReports.length > 0) {
       console.info('[dsh.turn-collapse] reconcile', { flowCount: columns.length, perColumn: debugReports });
-    }
-    // DOM-readable diagnostics: the deploy probe reads this via getAttribute.
-    const bulk = document.getElementById('dsh-ta-bulk-controls');
-    if (bulk !== null) {
-      bulk.dataset.dshTaDiag = JSON.stringify(diagReports);
     }
   };
 
@@ -997,17 +1037,6 @@ export function createProjector(
     }
     applyPlan(column, scrollerOf(column), rows, summaries, isCollapsed, true, null);
   };
-  /** Error-visible variant: a thrown toggle must show up in the DOM probe. */
-  const applyCollapseVisible: typeof applyCollapse = (...args) => {
-    try {
-      return applyCollapse(...args);
-    } catch (error) {
-      const bulk = document.getElementById('dsh-ta-bulk-controls');
-      if (bulk !== null) bulk.dataset.dshTaError = String(error);
-      throw error;
-    }
-  };
-
   return {
     start() {
       if (running) return;
@@ -1059,25 +1088,6 @@ export function createProjector(
     },
     reconcile() {
       applyAll(false);
-    },
-    bulkCollapse(collapsed: boolean): void {
-      const columns = document.querySelectorAll<HTMLElement>('[data-chat-flow]');
-      for (const column of columns) {
-        const domSummaries = collectSummaries(column);
-        const ownerSessionId = pickColumnSessionId(domSummaries) ?? sessionId ?? readCurrentSessionId();
-        if (ownerSessionId === null) continue;
-        const rows = describeRows(column);
-        const { summaries } = resolveColumnSummaries(column, rows, ownerSessionId);
-        if (summaries.size === 0) continue;
-        const latestTurn = Math.max(...summaries.keys());
-        for (const turn of summaries.keys()) {
-          if (collapsed && turn === latestTurn) continue;
-          store.setCollapsed(ownerSessionId, turn, collapsed ? 'collapsed' : 'expanded');
-        }
-        const isCollapsed = (turn: number): boolean =>
-          store.getCollapsed(ownerSessionId, turn) === 'collapsed';
-        applyPlan(column, scrollerOf(column), rows, summaries, isCollapsed, true, null);
-      }
     },
   };
 }
