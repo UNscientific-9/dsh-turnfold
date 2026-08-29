@@ -39,6 +39,6 @@ npm run build                  # scripts/build.ps1 直调 esbuild.exe/tsc，产�
 
 ## 当前状态与运行时
 
-- 分支 `fix/dsh-0.1.2-alpha`：v0.3 重构（+237/−4894，57 文件）已完成且 typecheck/test/build 全绿，**尚未提交**；真实宿主手验未做。
+- 分支 `fix/dsh-0.1.2-alpha`：v0.3 重构已完成并通过独立 review（review 修复了 definition `target`/`buildViewNode` 不成对触发的官方注册断言），typecheck/test/build 全绿。**真实宿主手验未做**，发版前按 `plugin/docs/manual-verification.md` 过一遍。
 - 运行时装载：profile 依赖 file: tgz + `cordis.patch.yml` 的单条 loader insert（name 须匹配 bundle id）；`@deepseek-ai/*` 全部 external 由宿主解析；`peerDependencies` 保持为空。
 - localStorage 契约：`dsh.turn-collapse.v1`（展开决策，向后兼容 v0.2 数据）、`dsh.turn-collapse.autoLoad`（默认开）、`dsh.turn-collapse.completedOnly`（默认关）。

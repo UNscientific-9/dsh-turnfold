@@ -80,6 +80,12 @@ test('shouldForceExpand fires only for known non-completed reasons while enabled
   assert.equal(shouldForceExpand('aborted', false), false, 'switch off -> follow official');
 });
 
+test('shouldForceExpand treats unknown reason kinds as non-completed (open union)', () => {
+  // TurnEndReasonKind 是开放 union：宿主新增的 reason（如 'weird'）不是
+  // completed，白名单语义「只有 completed 折叠」必须覆盖它们。
+  assert.equal(shouldForceExpand('weird', true), true);
+});
+
 test('isCompletedOnlyEnabled reads the switch with off as the default', () => {
   const storage = (value: string | null) =>
     ({ getItem: (k: string) => (k === COMPLETED_ONLY_KEY ? value : null) }) as Storage;

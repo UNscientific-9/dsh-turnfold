@@ -38,6 +38,7 @@ buildLocationData → Turn data: ConversationTurnDataMap['turn-activity']
 | keyed slot `conversation.chat.node` | ui-chat contract/slots.ts | key = `ChatNodeKind`；同 key 同 priority 注册 throw，**低 priority 者胜（lowest renders）**——本插件用 `priority: -1` shadow 官方 |
 | `TurnProcessOwnerProps` | 同上 | `{ spec, foldable, open, setOpen }`；`open` 是官方 chat store 的 live 状态，`setOpen` 经 `actions.setTurnProcessOpen(turn, generation, open)` 回流 |
 | `useTurnData(key)` | ui-chat apply.ts CHAT_NODE_INJECT | 读**当前渲染节点所在 turn** 的 `ConversationTurnDataMap[key]`；本插件 definition 经 declaration-merge 扩展 `'turn-activity'` 键 |
+| definition 注册形状 | ui-conversation `assertDefinitionTarget` | **`target` 与 `buildViewNode` 必须成对出现**（官方 register 运行时断言，二者皆缺才是 state-only 形状）——本插件 definition 只有 `buildLocationData`，必须省略 `target`；typecheck 无此约束，单独声明 `target: 'chat'` 会在 apply 时同步 throw 且控制台 load 日志已先打出（假阳性） |
 | 官方折叠决策 | ChatNodeSeat | `foldable = processWindowReady && (processMember || ownsDisclosure…)`，其中 processWindowReady = `compactTranscript && answerAnchorSeq !== null && turnClosed && !historyIncomplete`；**不区分 turn/end reason** |
 | 成员行隐藏 | ChatNodeSeat + searchable-hidden | `processHidden = foldable && processMember && !processOpen` → wrapper `hidden="until-found"`；`setOpen(true)` 回流即摘除；shadow renderer return null 后空 wrapper 被官方 `.flowItem:empty{display:none}` 吞掉 |
 | `loadOlder` | session-controller session.ts | `session.loadOlder()`：幂等（openState/hasMore/loadingOlder 三重护栏）；**hasMore 期间官方折叠条整体禁用**（historyIncomplete）——自动加载完成后折叠才生效，属官方既定行为 |

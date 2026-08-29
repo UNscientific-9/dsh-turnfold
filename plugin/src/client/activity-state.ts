@@ -35,16 +35,15 @@ export interface TurnActivityState {
     | undefined;
   /** Step of the LAST `assistant/message` — the final answer row, never collapsed. */
   readonly finalStep: number | undefined;
-  /** Deduped, first-seen tool call ids of this turn (for row classification). */
+  /** Deduped, first-seen tool call ids of this turn (published in the summary; v0.3 no longer consumes it downstream). */
   readonly toolCallIds: readonly string[];
   /** Steps that streamed at least one `reasoning-delta` chunk. */
   readonly thinkingSteps: readonly number[];
   /**
-   * Deduped `llm/retry` retry ids of this turn (for hiding the correlated
-   * `model-retry` rows — the retry notice rendered inside the activity
-   * region — when the turn is collapsed). A retry's key is its random
-   * `retryId`, which carries no turn/step information, so the summary must
-   * publish the ids for the projector to match rows back to this turn.
+   * Deduped `llm/retry` retry ids of this turn. A retry's key is its random
+   * `retryId`, which carries no turn/step information — only the turn's own
+   * state can associate it. (v0.3 keeps the accumulation as a state-machine
+   * invariant even though the augment face no longer publishes it.)
    */
   readonly retryIds: readonly string[];
   /**
@@ -112,8 +111,8 @@ export interface TurnActivityState {
    * Frozen final-step decision captured at the same moment as `anchorSeq`:
    * the step of the last `assistant/message`, unless tool activity landed
    * AFTER that message — then the message is an intermediate "I'm calling a
-   * tool" step, not a final answer, and `undefined` lets the projector hide
-   * every activity row when collapsed.
+   * tool" step, not a final answer (`undefined` in that case; the value is
+   * kept as a state invariant, the v0.3 augment face no longer publishes it).
    */
   readonly finalStepFrozen: number | undefined;
   readonly hasFinalMessage: boolean;
@@ -136,8 +135,8 @@ export interface TurnActivitySummary {
   readonly anchorSeq: number;
   readonly finalStep: number | undefined;
   readonly toolCallIds: readonly string[];
-  /** Correlated `llm/retry` ids; the projector hides the matching
-   *  `model-retry` rows when the turn is collapsed. */
+  /** Correlated `llm/retry` ids (state invariant; the v0.3 augment face no
+   *  longer publishes or consumes it). */
   readonly retryIds: readonly string[];
 }
 
@@ -293,10 +292,9 @@ export function updateTurnActivityState(
       };
     case 'llm/retry': {
       // Same anchor rule as `step/end` (a retry may rewrite the in-flight
-      // step before it finalizes). Record the retry id so the summary can
-      // publish it and the projector can hide the correlated `model-retry`
-      // row (its own key carries only the random retryId) when the turn is
-      // collapsed.
+      // step before it finalizes). Record the retry id — a retry's own key
+      // carries only the random retryId, so only the turn state can
+      // associate it with this turn.
       const retryId = event.data.retryId;
       return {
         ...state,

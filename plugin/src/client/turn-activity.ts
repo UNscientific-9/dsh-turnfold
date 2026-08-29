@@ -32,9 +32,14 @@ declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   }
 }
 
-export function createTurnActivityDefinition(): ConversationNodeDefinition<TurnActivityState> {  return {
+/**
+ * state-only definition：不产 view node，因此**必须省略 target**——官方
+ * register 运行时断言「target 与 buildViewNode 成对出现」（二者皆缺才是
+ * state-only 形状），单独声明 target 会在 apply 时同步 throw。
+ */
+export function createTurnActivityDefinition(): ConversationNodeDefinition<TurnActivityState> {
+  return {
     kind: TURN_ACTIVITY_KIND,
-    target: 'chat',
     match: matchTurnActivity,
     start: (context: ConversationNodeContext<TurnActivityState>, match: ConversationMatch) => {
       if (match.event.type !== 'turn/start') {
@@ -45,7 +50,9 @@ export function createTurnActivityDefinition(): ConversationNodeDefinition<TurnA
     update: (context, match) => updateTurnActivityState(context.state, match.event),
     // reasonKind / durationMs / thinkingSteps 全部在 `turn/end` 定型：
     // thinking 计数在流式途中虽然增长，但官方折叠条只在轮次封闭后渲染，
-    // 中途发布无人消费。一次发布即定型，无需中途重发布。
+    // 中途发布无人消费。一次发布即定型，无需中途重发布。（理论序「消息晚
+    // 于 turn/end」下 augment 缺席，renderer 退化为纯官方文案——数据缺席
+    // 不推断。）
     publication: (match) => (match.event.type === 'turn/end' ? 'immediate' : 'none'),
     buildLocationData: (context, scope): ConversationLocationData | null => {
       if (scope !== 'turn' || context.state === undefined) return null;

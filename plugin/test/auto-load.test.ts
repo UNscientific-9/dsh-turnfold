@@ -85,3 +85,66 @@ test('disabled switch stops all dispatches', async () => {
     });
   }
 });
+
+test('auto-load degrades when the binding is missing or loadOlder throws', async () => {
+  // binding 缺失：整个 pass no-op，且不重置别的 host pace（此处只有 no-op）。
+  setAutoLoadSessions({
+    binding() {
+      return undefined;
+    },
+  });
+  setAutoLoadSessionReader(() => 's1');
+  assert.deepEqual(await checkAutoLoadOnce(docWith([{ scrollTop: 0 }]), 1000), []);
+
+  // loadOlder 抛错：dispatch 视为失败，pace 重置（下一次 tick 立即重试）。
+  const calls: string[] = [];
+  let attempts = 0;
+  setAutoLoadSessions({
+    binding(id: string) {
+      return {
+        session: {
+          loadOlder: async () => {
+            attempts += 1;
+            if (attempts === 1) throw new Error('network boom');
+            calls.push(id);
+          },
+        },
+      };
+    },
+  });
+  const doc = docWith([{ scrollTop: 0 }]);
+  assert.deepEqual(await checkAutoLoadOnce(doc, 2000), [], 'first attempt fails');
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal((await checkAutoLoadOnce(doc, 2000)).length, 1, 'retry after failure');
+  await new Promise((r) => setTimeout(r, 10));
+  assert.deepEqual(calls, ['s1']);
+});
+
+test('auto-load rejects a second dispatch while one is still in flight', async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let started = 0;
+  setAutoLoadSessions({
+    binding() {
+      return {
+        session: {
+          loadOlder: async () => {
+            started += 1;
+            await gate;
+          },
+        },
+      };
+    },
+  });
+  setAutoLoadSessionReader(() => 's1');
+  const doc = docWith([{ scrollTop: 0 }]);
+  const first = checkAutoLoadOnce(doc, 3000);
+  // 首次调用已进入 inFlight（loadOlder 挂起）——第二个 pass 必须被拒。
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(await checkAutoLoadOnce(doc, 3010), []);
+  release();
+  assert.equal((await first).length, 1, 'the in-flight dispatch completes');
+  assert.equal(started, 1);
+});
