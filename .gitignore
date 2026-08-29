@@ -17,3 +17,6 @@ deep-research-report.md
 plugin/docs/code-review-*.md
 .review-tmp/
 code-review-fixes-*.md
+# 本地验证工具与历史归档（不发到 GitHub）
+.verif/
+archive/
