@@ -1,6 +1,10 @@
 # @UNscientific-9/dsh-turnfold
 
-DSH Web **官方折叠条的增强插件**：DSH 0.1.2 起内置了轮次过程折叠（`turn-process` 折叠条，`N 次工具调用 · N 条消息 · N 个 subagent`），本插件接管它的渲染并叠加四项官方没有的增强——
+DSH Web 官方折叠条的**增强插件**。DSH 0.1.2 起内置了轮次过程折叠条（`turn-process`），本插件以高优先级接管它的渲染：**外观与行为和官方一致**，在不改动官方任何逻辑的前提下叠加官方没有的四项增强。
+
+![效果展示](docs/assets/foldbar-demo.png)
+
+*实际运行效果（DSH 0.1.2-alpha.1 + 本插件 0.3.0）：折叠条前半段 `43 次工具调用 · 15 条消息` 是官方计数文案，后半段 `· 用时 30分49秒` 是本插件注入的增强段（弱化色显示）；点击开合，刷新后自动恢复之前的展开状态。*
 
 | 增强 | 说明 |
 |---|---|
@@ -52,6 +56,8 @@ turn-activity definition（本插件）── 每轮状态机 ── turn/end �
 
 3. 在 profile 目录安装依赖：`cd $env:USERPROFILE\.dsh\profiles\web && pnpm install`。
 
+   > 出现 `unmet peer` 黄色警告（DSH 各 rc 小版本差异）可忽略，不影响使用。
+
 4. 重启 DSH web，浏览器打开后**强制刷新一次**（`Ctrl+Shift+R`）。
 
 ### 确认装上了
@@ -77,7 +83,7 @@ turn-activity definition（本插件）── 每轮状态机 ── turn/end �
 ```bash
 npm install --ignore-scripts    # 构建依赖（typescript/esbuild）
 npm run typecheck               # tsc --noEmit
-npm test                        # node --test（34 个用例）
+npm test                        # node --test（37 个用例）
 npm run build                   # 产物 → lib/
 npm pack                        # 打包 → dsh-turnfold-<version>.tgz
 ```
@@ -101,10 +107,10 @@ src/
 lib/
   client.js              浏览器半部（单文件 bundle）
   index.js               host 半部
-test/                    node:test 单元测试（34 个用例）
+test/                    node:test 单元测试（37 个用例）
 ```
 
 ## 版本历史
 
-- **0.3.0**：转型为官方折叠条增强插件——以 `priority:-1` shadow 官方 `turn-process` renderer，砍掉自有折叠条全家桶（projector/synth/summary-view/animate 等约 2500 行）；保留轮次状态机，新增用时/思考段数注入、展开决策持久化（官方 store 为内存态）、completed 白名单（可配默认关）、自动加载更早历史改走 `binding().session.loadOlder()`；测试 57→34（纯逻辑），DOM 集成 spec 废弃改手工验证清单
+- **0.3.0**：转型为官方折叠条增强插件——以 `priority:-1` shadow 官方 `turn-process` renderer，砍掉自有折叠条全家桶（projector/synth/summary-view/animate 等约 2500 行）；保留轮次状态机，新增用时/思考段数注入、展开决策持久化（官方 store 为内存态）、completed 白名单（可配默认关）、自动加载更早历史改走 `binding().session.loadOlder()`；测试 57→37（纯逻辑），DOM 集成 spec 废弃改手工验证清单
 - **0.2.0~0.2.8**：自有折叠条时代（锚点修复、合成折叠条、自动加载、成员快照、动画与性能优化），0.1.1-rc.2 系列
