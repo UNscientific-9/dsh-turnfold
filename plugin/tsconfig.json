@@ -17,7 +17,18 @@
     "rootDir": "src",
     "declarationDir": "lib/types",
     "emitDeclarationOnly": true,
-    "types": ["node"]
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@deepseek-ai/cordis": ["D:/deepseek-harness/packages/client/ui-conversation/node_modules/@deepseek-ai/cordis/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-client-locale/client": ["D:/deepseek-harness/packages/client/locale/lib/types/client/index.d.ts"],
+      "@deepseek-ai/dsh-client-ui-conversation/client": ["D:/deepseek-harness/packages/client/ui-conversation/lib/types/client/index.d.ts"],
+      "@deepseek-ai/dsh-client-ui-chat/client": ["D:/deepseek-harness/packages/client/ui-chat/lib/types/client/index.d.ts"],
+      "@deepseek-ai/dsh-client-ui-renderer/client": ["D:/deepseek-harness/packages/client/ui-renderer/lib/types/client/index.d.ts"],
+      "@deepseek-ai/dsh-api-session-controller/client": ["D:/deepseek-harness/packages/api/session-controller/lib/types/client/index.d.ts"],
+      "@deepseek-ai/dsh-session/types": ["D:/deepseek-harness/packages/core/session/lib/types/types.d.ts"],
+      "@deepseek-ai/dsh-llm-retry/types": ["D:/deepseek-harness/packages/llm/llm-retry/lib/types/types.d.ts"]
+    }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"],
   "exclude": ["lib", "node_modules", "test"]

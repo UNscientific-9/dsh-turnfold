@@ -3,9 +3,10 @@
  *
  * Every rendered Chat node row carries `data-chat-anchor-key` whose value is
  * `conversationContextKey(kind, id)` — `<kind.length>:<kind><id>` (verified in
- * @deepseek-ai/dsh-client-runtime). We parse that key back into kind + id and
- * decide whether the row belongs to a given turn's collapsible activity
- * region, is the turn's final answer (never hidden), or is unrelated.
+ * the DSH chat seat, 0.1.2 的 ui-chat ChatNodeSeat 仍渲染同一属性). We parse
+ * that key back into kind + id and decide whether the row belongs to a given
+ * turn's collapsible activity region, is the turn's final answer (never
+ * hidden), or is unrelated.
  */
 import type { TurnActivitySummary } from './activity-state.ts';
 

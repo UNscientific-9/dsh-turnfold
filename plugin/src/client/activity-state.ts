@@ -8,7 +8,10 @@
  * max-tokens / interrupted) keeps the activity region expanded, and a turn
  * without a final message never materializes a summary node at all.
  */
-import type { SessionEvent } from '@deepseek-ai/dsh-session/types';
+import type { SessionEventLike } from '@deepseek-ai/dsh-api-session-controller/client';
+// 0.1.2：`llm/retry` / `llm/retry-started` 事件由 dsh-llm-retry 包
+// augment 进 SessionEventMap（0.1.1 是内建成员），必须显式导入该类型面。
+import type {} from '@deepseek-ai/dsh-llm-retry/types';
 
 /** TurnEndReasonMap kinds known to DSH 0.1.1-rc.2; `(string & {})` keeps the
  *  merge-extensible reason map compatible. */
@@ -142,7 +145,7 @@ export const TURN_ACTIVITY_KIND = 'turn-activity';
 
 /** Stable per-turn identity for the definition; role `start` only on turn/start. */
 export function matchTurnActivity(
-  event: SessionEvent,
+  event: SessionEventLike,
 ): { id: string; role: 'start' | 'update' } | null {
   switch (event.type) {
     case 'turn/start':
@@ -193,7 +196,7 @@ function pushUnique<T>(list: readonly T[], value: T): readonly T[] {
 /** Apply one post-start event; caller guarantees matchTurnActivity accepted it. */
 export function updateTurnActivityState(
   state: TurnActivityState,
-  event: SessionEvent,
+  event: SessionEventLike,
 ): TurnActivityState {
   switch (event.type) {
     case 'turn/end': {

@@ -12,8 +12,7 @@
  *   row hiding and scroll compensation.
  */
 import { memo, useEffect, useSyncExternalStore } from 'react';
-import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client';
-import type { ChatNode, ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client';
+import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client';
 import { shouldAutoCollapse, type TurnActivitySummary } from './activity-state.ts';
 import { formatDurationChinese, formatDurationEnglish } from './format.ts';
 import { NS, type DurationLocaleTag } from './locales.ts';
@@ -29,20 +28,24 @@ import {
 } from './projector.ts';
 import { getProjector, getStore } from './singletons.ts';
 
-/** Registered renderer payload for the turn-activity Chat node. */
-declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
-  interface ChatNodeDataMap {
-    'turn-activity': TurnActivitySummary;
-  }
-}
+/**
+ * 0.1.2 的 `ChatNodeDataMap` 声明在 ui-chat 包内部（相对路径 augment，
+ * 第三方包无法扩展），因此节点类型本地构造：kind + data 已知，直接
+ * 收窄 ChatConversationViewNode，与 `ChatNode<'turn-activity'>` 等价。
+ */
+type TurnActivityNode = ChatConversationViewNode & {
+  readonly kind: 'turn-activity';
+  readonly data: TurnActivitySummary;
+};
 
-type TurnActivityNode = ChatNode<'turn-activity'>;
-
-/** Props actually consumed by this view (subset of the chat node seat props). */
+/** Props actually consumed by this view (subset of the chat node seat props).
+ *
+ * 0.1.2 的 ConversationSnapshot 不再携带 sessionId；会话身份由宿主 seat
+ * 的 session 标准 props 直接下发（SessionStandardProps.sessionId）。 */
 interface TurnActivityViewProps {
   node: TurnActivityNode;
   t: (key: string, params?: Record<string, string>) => string;
-  useSession: <T>(selector: (snapshot: ConversationSnapshot) => T) => T;
+  sessionId: string;
 }
 
 function formatDuration(ms: number, t: TurnActivityViewProps['t']): string {
@@ -76,10 +79,9 @@ function summaryText(summary: TurnActivitySummary, t: TurnActivityViewProps['t']
 export const TurnActivityNodeView = memo(function TurnActivityNodeView({
   node,
   t,
-  useSession,
+  sessionId,
 }: TurnActivityViewProps) {
   const summary = node.data as TurnActivitySummary;
-  const sessionId = useSession((snapshot) => snapshot.sessionId);
 
   // Refresh the membership snapshot cache on every render: the facts must
   // survive the summary row leaving the document (paged/windowed history),

@@ -7,6 +7,12 @@
 import type { Context } from '@deepseek-ai/cordis';
 // Loads the `@deepseek-ai/cordis` Context augmentation that declares `locale`.
 import type {} from '@deepseek-ai/dsh-client-locale/client';
+// Loads the SlotRegistry service merge（`ctx.slots`）——`import type {}` 的
+// augmentation 在 d.ts emit 时会被抹掉，必须由插件显式导入才能进入编译。
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client';
+// Loads the Context augmentation that declares `uiConversation`
+// (0.1.2：conversationEvents 服务已并入 ui-conversation 的 events registry)。
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client';
 import { setAutoLoadSessions, startAutoLoad, type AutoLoadSessions } from './auto-load.ts';
 import { TURN_ACTIVITY_KIND } from './activity-state.ts';
 import { en, NS, zh } from './locales.ts';
@@ -16,8 +22,13 @@ import { ensureStyles } from './styles.ts';
 import { TurnActivityNodeView } from './summary-view.tsx';
 import { createTurnActivityDefinition } from './turn-activity.ts';
 
-/** Hard service dependencies (the client module system resolves these rows first). */
-export const inject = ['slots', 'locale', 'conversationEvents'];
+/**
+ * Hard service dependencies (the client module system resolves these rows first).
+ *
+ * 0.1.2 变更：`conversationEvents` 客户端服务被移除，其事件定义注册面并入
+ * `uiConversation`（`ctx.uiConversation.events`，ConversationEventRegistry）。
+ */
+export const inject = ['slots', 'locale', 'uiConversation'];
 
 /** Bumped with every shipped change: shows up once in the browser console
  *  so a stale bundle (DSH serves the pnpm-installed copy) is obvious. */
@@ -32,7 +43,7 @@ export function apply(ctx: Context): void {
   // fresher facts (existing entries win in hydrateMembership).
   hydrateMembership(typeof localStorage !== 'undefined' ? localStorage : undefined);
 
-  ctx.conversationEvents.register(createTurnActivityDefinition());
+  ctx.uiConversation.events.register(createTurnActivityDefinition());
 
   ctx.effect(
     () => ctx.locale.register(NS, { zh, en }),

@@ -11,12 +11,14 @@
  * it.
  */
 import type {
-  ChatConversationViewNode,
   ConversationLocation,
   ConversationMatch,
   ConversationNodeContext,
   ConversationNodeDefinition,
-} from '@deepseek-ai/dsh-client-runtime/client';
+} from '@deepseek-ai/dsh-client-ui-conversation/client';
+// 0.1.2：Chat 渲染单元类型（target:'chat' + anchorSeq）从 client-runtime
+// 移到了 ui-chat 包。
+import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client';
 import {
   initialTurnActivityState,
   matchTurnActivity,
@@ -27,7 +29,7 @@ import {
   type TurnActivitySummary,
 } from './activity-state.ts';
 
-declare module '@deepseek-ai/dsh-client-runtime/client' {
+declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   interface ConversationTurnDataMap {
     /** Completed-turn activity facts for the turn-activity surface. */
     'turn-activity': TurnActivitySummary;
