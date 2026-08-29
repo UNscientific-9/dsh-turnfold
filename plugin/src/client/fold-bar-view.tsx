@@ -118,8 +118,10 @@ export const FoldBarView = memo(function FoldBarView({
       skipAnimRef.current = false;
       return;
     }
-    // 用户点击触发的展开（toggle 里只调了 setOpen）：成员行刚摘 hidden，
-    // rAF 在本轮 paint 前把行压到 0 高再过渡展开，不闪帧。
+    // 用户点击触发的展开（toggle 里只调了 setOpen）：本 layout effect 跑在
+    // 官方父组件摘 hidden 之前（React layout effect 子先父后），动画在微任务
+    // 里等全部 layout effect 结束、paint 之前测高并压 0 启动——内容不会先
+    // 闪一帧完整形态再被压没。
     const bar = barRef.current;
     if (bar === null) return;
     const rows = collectProcessRows(turn, bar);
@@ -164,11 +166,13 @@ export const FoldBarView = memo(function FoldBarView({
       // 动画进行中再点：视觉正在去的方向的反面就是用户要的，直接反转。
       const { handle, direction } = animationRef.current;
       const next: FoldDirection = direction === 'expand' ? 'collapse' : 'expand';
-      handle.reverse(() => {
+      const active = handle.reverse(() => {
         animationRef.current = undefined;
         if (next === 'collapse') setOpen(false);
       });
-      animationRef.current = { handle, direction: next };
+      // 反转落在同步 settle 上时，完成回调已清空 animationRef——不得再
+      // 覆盖成已完成的 handle，否则残留 handle 让后续点击永久短路。
+      if (active) animationRef.current = { handle, direction: next };
       store.write(withPersistedTurn(store, sessionId, turn, next === 'expand' ? 'expanded' : 'collapsed'));
       return;
     }
