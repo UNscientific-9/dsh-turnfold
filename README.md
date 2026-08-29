@@ -3,75 +3,73 @@
 # dsh-turnfold
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![DSH](https://img.shields.io/badge/DSH-0.1.1--rc.2-blue)](https://github.com/deepseek-ai/dsh-client-runtime)
-[![Release](https://img.shields.io/badge/Release-v0.2.8-green)](https://github.com/UNscientific-9/dsh-turnfold/releases/tag/v0.2.8)
+[![DSH](https://img.shields.io/badge/DSH-0.1.2--alpha.1-blue)](https://github.com/deepseek-ai/dsh-client-runtime)
+[![Release](https://img.shields.io/badge/Release-v0.3.1-green)](https://github.com/UNscientific-9/dsh-turnfold/releases/tag/v0.3.1)
 
-> A Codex/ZCode-style turn activity collapse plugin for [DSH Web](https://github.com/deepseek-ai/dsh-client-runtime). While the agent works, thinking / tool calls / narration stay fully visible. **When a turn completes, the activity collapses into a one-line summary** so the final answer becomes the visual focus.
+> An enhancement plugin for the **official turn fold bar** built into [DSH Web](https://github.com/deepseek-ai/dsh-client-runtime) 0.1.2. It takes over the official `turn-process` renderer with an identical look and behaviour, and adds four enhancements the official bar doesn't have — purely client-side.
 
-![Collapsed turn](docs/screenshot.png)
+![Effect demo](plugin/docs/assets/foldbar-demo.png)
 
-## What it is
+*Live effect (DSH 0.1.2-alpha.1 + this plugin 0.3.1): the first half — `43 tool calls · 15 messages` — is the official count text; the faded `· took 30m 49s` tail is injected by this plugin. Click to fold/unfold; the expanded state survives refreshes.*
 
-Long agentic turns produce a lot of intermediate output: planning text, tool calls, tool results, retries, and chunks of thinking. Reading the final answer afterwards means scrolling past all of it.
+## The four enhancements
 
-This plugin watches the DSH session event stream. When a turn ends with `reason.kind === 'completed'` and a final message exists, it folds the activity block into a single persistent summary line — `This turn took 2m 38s · 7 tool calls · 3 reasoning segments` — with a subtle divider. Click the summary to expand and re-collapse at will. Your choice persists across reloads.
+| Enhancement | What it does |
+|---|---|
+| **Duration + thinking segments** | Appends `· took X · M thinking segments` in a faded tertiary colour, computed by the plugin's own per-turn state machine |
+| **Fold-decision persistence** | The official fold state is in-memory only (lost on refresh); the plugin records your choice in localStorage and restores it on reload |
+| **completed whitelist (optional, off by default)** | The official bar folds every settled turn regardless of outcome; when enabled, aborted / errored / max-tokens turns stay expanded and render no bar at all |
+| **Auto-load earlier history** | Scrolling near the top of a conversation automatically invokes the official `loadOlder()`, so long-session history arrives pre-folded |
 
-The plugin is **purely client-side**. It does not modify the DSH backend, the session store, or any user data. Unloading it leaves zero residue on the server and on disk.
+- Purely front-end: no backend changes, no session-store changes, zero server-side residue after uninstall.
+- Pinned to **DSH 0.1.2-alpha.1** (official `turn-process` fold bar, keyed slot `conversation.chat.node`, `useTurnData` injection surface).
 
-## Effect
+## How it works
 
 ```
-(Previous turn content)
-
-User message...
-› This turn took 2m 38s · 7 tool calls · 3 reasoning segments   ← clickable
-──────────────────────────────────  ← divider
-Final answer...
+official ui-chat fold bar (turn-process)
+        │  ctx.slots.register({ key:'turn-process', priority:-1 })   ← shadow render
+        ▼
+FoldBarView (this plugin's shadow renderer)
+        │  official counts (node.data) + augment segment (useTurnData('turn-activity'))
+        ▼
+turn-activity definition ── per-turn state machine ── publishes {durationMs, thinkingSteps, reasonKind} at turn/end
 ```
 
-## Core features
-
-- **Auto-collapse** — turns that end normally collapse to a one-line summary. Aborted / blocked / error turns stay expanded; you can still fold them by hand.
-- **Synthetic summaries** — for very long sessions where DSH has only loaded a slice of history, turns that fall outside the loaded window also get a synthetic summary line (showing step count and tool count).
-- **Auto-load earlier** — scrolling near the top of the conversation automatically calls DSH's "load earlier", and old turns get folded as they arrive.
-- **State persistence** — collapse / expand choices are stored in localStorage and survive page refreshes and session reopens. Even the state of older turns is remembered (via a membership snapshot).
-- **Position correctness** — the summary line is fixed between the user message and the final answer of that turn (0.2.6 anchor fix).
+Expand/collapse plays a height animation (Web Animations API, direction-reversible, `prefers-reduced-motion` aware); `foldable=false` follows the official renderer and renders nothing.
 
 ## Install
 
-1. Make sure DSH web (`dsh` CLI) is installed, version 0.1.1-rc.2 series.
-2. Edit `%USERPROFILE%\.dsh\profiles\web\package.json` and add the dependency:
+1. Get `dsh-turnfold-0.3.1.tgz` (see [Releases](https://github.com/UNscientific-9/dsh-turnfold/releases)) and put it in a fixed directory.
+2. Edit the DSH web profile's `%USERPROFILE%\.dsh\profiles\web\package.json` and add the dependency:
    ```json
    {
      "dependencies": {
-       "@UNscientific-9/dsh-turnfold": "file:D:/path/to/dsh-turnfold-0.2.8.tgz"
+       "@UNscientific-9/dsh-turnfold": "file:D:/path/to/dsh-turnfold-0.3.1.tgz"
      }
    }
    ```
-3. In the profile directory, run `pnpm install`, then restart DSH web and hard-refresh the browser (`Ctrl+Shift+R` / `Cmd+Shift+R`).
-4. The browser console should show `[dsh.turnfold] v0.2.8 loaded` on load.
+3. In the profile directory, run `pnpm install`, then restart DSH web and hard-refresh the browser (`Ctrl+Shift+R`).
+4. The browser console should show `[dsh.turnfold] v0.3.1 loaded`, and completed turns get the official-style fold bar with a faded `· took X · M thinking segments` tail.
 
-## Compatibility & uninstall
-
-| Topic | Detail |
-|---|---|
-| DSH version | `@deepseek-ai/dsh-client-runtime` / `dsh-client-ui-conversation` / `dsh-session` 0.1.1-rc.2 |
-| Uninstall | Remove the line from `%USERPROFILE%\.dsh\profiles\web\package.json`, run `pnpm install`, restart, hard-refresh |
-| Reset collapse state | DevTools console: `localStorage.removeItem('dsh.turn-collapse.v1')`, then refresh |
+Requires DSH web **0.1.2-alpha.1** (0.1.1 has no official fold bar — this plugin does not apply).
 
 ## Configuration (localStorage)
 
 | Key | Default | Effect |
 |---|---|---|
-| `dsh.turn-collapse.autoLoad` | `'1'` | Set to `'0'` to disable auto-load of older turns on scroll-near-top |
-| `dsh.turn-collapse.debug` | unset | Set to `'1'` to enable reconcile diagnostic logs in the console |
+| `dsh.turn-collapse.completedOnly` | unset | Set to `'1'` to keep aborted / errored / max-tokens turns expanded; remove the key to restore the official behaviour |
+| `dsh.turn-collapse.autoLoad` | `'1'` | Set to `'0'` to disable auto-load of earlier history |
+
+## Uninstall
+
+Remove the `@UNscientific-9/dsh-turnfold` line from the profile `package.json`, run `pnpm install`, restart DSH web and hard-refresh. Everything the plugin owns lives in the browser (three localStorage keys + one `<style>` tag); removing it restores the pure official fold bar.
 
 ## Documentation
 
-- Full user guide and FAQ: [plugin/README.md](plugin/README.md)
-- Architecture (state machine + DOM contract): [plugin/docs/architecture.md](plugin/docs/architecture.md)
-- UI / CSS spec: [plugin/docs/ui-spec.md](plugin/docs/ui-spec.md)
-- DSH version upgrade checklist: [plugin/docs/maintenance.md](plugin/docs/maintenance.md)
+- Full user guide: [plugin/README.md](plugin/README.md)
+- Architecture: [plugin/docs/architecture.md](plugin/docs/architecture.md)
+- Manual verification checklist: [plugin/docs/manual-verification.md](plugin/docs/manual-verification.md)
 
 ## License
 

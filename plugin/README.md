@@ -83,7 +83,7 @@ turn-activity definition（本插件）── 每轮状态机 ── turn/end �
 ```bash
 npm install --ignore-scripts    # 构建依赖（typescript/esbuild）
 npm run typecheck               # tsc --noEmit
-npm test                        # node --test（37 个用例）
+npm test                        # node --test（36 个用例）
 npm run build                   # 产物 → lib/
 npm pack                        # 打包 → dsh-turnfold-<version>.tgz
 ```
@@ -97,7 +97,7 @@ src/
   index.ts               host 半部（空壳，浏览器功能全部在 ./client）
   client/
     index.ts             apply 入口：注册 definition + shadow renderer + 字典 + auto-load
-    activity-state.ts    轮次状态机纯逻辑（match/update/summarize）
+    activity-state.ts    轮次状态机纯逻辑（match/update）
     activity-augment.ts  增强契约与纯决策（白名单开关/强制展开/折叠条文案）
     turn-activity.ts     ConversationNodeDefinition：turn/end 时发布增强 Turn data
     fold-bar-view.tsx    官方折叠条的 shadow renderer（增强渲染 + 持久化 + 白名单）
@@ -107,11 +107,11 @@ src/
 lib/
   client.js              浏览器半部（单文件 bundle）
   index.js               host 半部
-test/                    node:test 单元测试（37 个用例）
+test/                    node:test 单元测试（36 个用例）
 ```
 
 ## 版本历史
 
-- **0.3.1**：修复展开/收起动画——官方 hidden 在父组件 useLayoutEffect 切换（React 子先父后），动画先等成员行布局就绪（hidden 摘除、offsetHeight 非 0）再测量，改用 Web Animations API（el.animate）驱动高度过渡（不依赖 rAF/CSS transition 起点帧，IAB 后台/未激活面板照常播放）；修复展开动画消失、收起瞬间跳 0/抽动；动画中再次点击反转方向，`prefers-reduced-motion` 下跳过；测试 47
+- **0.3.1**：修复展开/收起动画——官方 hidden 在父组件 useLayoutEffect 切换（React 子先父后），动画先等成员行布局就绪（hidden 摘除、offsetHeight 非 0）再测量，改用 Web Animations API（el.animate）驱动高度过渡（不依赖 rAF/CSS transition 起点帧，IAB 后台/未激活面板照常播放）；修复展开动画消失、收起瞬间跳 0/抽动；动画中再次点击反转方向，`prefers-reduced-motion` 下跳过。发布后又做了一轮精简：状态机 15 字段→5 字段、删无人消费的 summary 层与死代码，测试 47→36（行为经真实宿主回归验证不变）
 - **0.3.0**：转型为官方折叠条增强插件——以 `priority:-1` shadow 官方 `turn-process` renderer，砍掉自有折叠条全家桶（projector/synth/summary-view/animate 等约 2500 行）；保留轮次状态机，新增用时/思考段数注入、展开决策持久化（官方 store 为内存态）、completed 白名单（可配默认关）、自动加载更早历史改走 `binding().session.loadOlder()`；测试 57→47，DOM 集成 spec 废弃改手工验证清单
 - **0.2.0~0.2.8**：自有折叠条时代（锚点修复、合成折叠条、自动加载、成员快照、动画与性能优化），0.1.1-rc.2 系列

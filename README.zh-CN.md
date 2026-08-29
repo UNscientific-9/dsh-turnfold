@@ -3,75 +3,73 @@
 # dsh-turnfold
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![DSH](https://img.shields.io/badge/DSH-0.1.1--rc.2-blue)](https://github.com/deepseek-ai/dsh-client-runtime)
-[![Release](https://img.shields.io/badge/Release-v0.2.8-green)](https://github.com/UNscientific-9/dsh-turnfold/releases/tag/v0.2.8)
+[![DSH](https://img.shields.io/badge/DSH-0.1.2--alpha.1-blue)](https://github.com/deepseek-ai/dsh-client-runtime)
+[![Release](https://img.shields.io/badge/Release-v0.3.1-green)](https://github.com/UNscientific-9/dsh-turnfold/releases/tag/v0.3.1)
 
-> [DSH Web](https://github.com/deepseek-ai/dsh-client-runtime) 的轮次折叠插件：agent 工作时，thinking / 工具调用 / 中间叙述保持完整流式可见；**一轮（turn）结束后，自动把活动块收纳成一行摘要**，让最终回答成为视觉主体。点击摘要可随时展开/收起，刷新后恢复选择。
+> [DSH Web](https://github.com/deepseek-ai/dsh-client-runtime) 0.1.2 内置官方轮次折叠条的**增强插件**。以相同的外观与行为接管官方 `turn-process` 渲染，在不改动官方任何逻辑的前提下叠加四项官方没有的增强——纯前端实现。
 
-![折叠后的轮次](docs/screenshot.png)
+![效果展示](plugin/docs/assets/foldbar-demo.png)
 
-## 它是什么
+*实际运行效果（DSH 0.1.2-alpha.1 + 本插件 0.3.1）：折叠条前半段 `43 次工具调用 · 15 条消息` 是官方计数文案，后半段 `· 用时 30分49秒` 是本插件注入的增强段（弱化色显示）；点击开合，刷新后自动恢复之前的展开状态。*
 
-长 agent 轮次会产生大量中间输出：规划文本、工具调用、工具结果、重试、一段段思考。事后再看最终答案，意味着要滚动过所有这些。
+## 四项增强
 
-这个插件监听 DSH 会话事件流。当一轮以 `reason.kind === 'completed'` 且存在最终消息结束时，它把活动块折叠成一行永久摘要 —— `本轮用时 2分38秒 · 7 次工具 · 3 段思考` —— 下方加一条低对比度分割线。点击摘要可展开/收起；你的选择会跨刷新保留。
+| 增强 | 说明 |
+|---|---|
+| **用时 + 思考段数** | 折叠条追加 `· 用时 X · M 段思考`（tertiary 色弱化显示），数据来自插件自有的轮次状态机 |
+| **展开决策持久化** | 官方折叠条的展开状态是内存态（刷新即失）；插件把你的展开选择写 localStorage，刷新/重开后恢复 |
+| **completed 白名单（可选，默认关）** | 官方对轮次终结一律折叠（不区分原因）；开启后中断/报错/超限的轮保持展开且不渲染折叠条 |
+| **自动加载更早历史** | 滚动到会话顶部附近时自动调用官方 `loadOlder()`，长会话历史边加载边折叠 |
 
-插件**纯前端**：不改 DSH 后端、不改会话存储、不动任何用户数据。卸载后服务端和磁盘都不留痕迹。
+- 纯前端插件：不改 DSH 后端、不改会话存储，卸载后服务端零残留。
+- 锁定：**DSH 0.1.2-alpha.1**（官方 `turn-process` 折叠、keyed slot `conversation.chat.node`、`useTurnData` 注入面）。
 
-## 效果
+## 工作方式
 
 ```
-（上一轮内容）
-
-用户消息……
-› 本轮用时 2分38秒 · 7 次工具 · 3 段思考   ← 可点击
-──────────────────────────────────  ← 分割线
-最终回答……
+官方 ui-chat 折叠条（turn-process）
+        │  ctx.slots.register({ key:'turn-process', priority:-1 })   ← shadow 接管渲染
+        ▼
+FoldBarView（本插件 shadow renderer）
+        │  官方计数段（node.data）+ 增强段（useTurnData('turn-activity')）
+        ▼
+turn-activity definition ── 每轮状态机 ── turn/end 时发布 {durationMs, thinkingSteps, reasonKind}
 ```
 
-## 核心功能
-
-- **自动折叠** — 正常完成的轮次自动收起为一行摘要；中断 / 阻塞 / 报错的轮次保持展开，可手动折叠。
-- **合成折叠条** — 长会话被窗口切掉的轮次也会生成合成折叠条（显示执行步骤数/工具数），不依赖是否加载到最早数据。
-- **自动加载更早** — 滚动到会话顶部附近时自动调用 DSH 的"加载更早"，历史轮次边加载边折叠，无需手动点击。
-- **状态持久化** — 折叠/展开选择存 localStorage，刷新、重开会话后恢复。早期轮次的折叠状态也会被记住（成员快照）。
-- **位置正确** — 折叠条固定在**用户消息下方、该轮回复正文上方**（0.2.6 锚点修复）。
+展开/收起带高度动画（Web Animations API 驱动，动画中可反向，`prefers-reduced-motion` 下跳过）；`foldable=false` 时跟随官方渲染器不渲染。
 
 ## 安装
 
-1. 已安装 DSH web（`dsh` CLI 可用），版本 0.1.1-rc.2 系列。
-2. 编辑 `%USERPROFILE%\.dsh\profiles\web\package.json`，在 `dependencies` 里加一行：
+1. 拿到 `dsh-turnfold-0.3.1.tgz`（见 [Releases](https://github.com/UNscientific-9/dsh-turnfold/releases)），放到一个固定目录（路径不要带空格）。
+2. 编辑 DSH web profile 的依赖文件 `%USERPROFILE%\.dsh\profiles\web\package.json`，在 `dependencies` 里加一行（路径改成实际位置）：
    ```json
    {
      "dependencies": {
-       "@UNscientific-9/dsh-turnfold": "file:D:/path/to/dsh-turnfold-0.2.8.tgz"
+       "@UNscientific-9/dsh-turnfold": "file:D:/path/to/dsh-turnfold-0.3.1.tgz"
      }
    }
    ```
-3. 在 profile 目录执行 `pnpm install`，重启 DSH web，浏览器硬刷新（`Ctrl+Shift+R` / `Cmd+Shift+R`）。
-4. 浏览器控制台应出现 `[dsh.turnfold] v0.2.8 loaded`。
+3. 在 profile 目录执行 `pnpm install`，重启 DSH web，浏览器硬刷新（`Ctrl+Shift+R`）。
+4. 浏览器控制台出现 `[dsh.turnfold] v0.3.1 loaded`，已完成回答前出现官方样式折叠条，计数后带灰色 `· 用时 X · M 段思考`。
 
-## 兼容与卸载
-
-| 项 | 说明 |
-|---|---|
-| DSH 兼容版本 | `@deepseek-ai/dsh-client-runtime` / `dsh-client-ui-conversation` / `dsh-session` 0.1.1-rc.2 |
-| 卸载 | 从 `%USERPROFILE%\.dsh\profiles\web\package.json` 删除依赖行，执行 `pnpm install`，重启 + 硬刷新 |
-| 清空折叠状态 | 浏览器控制台：`localStorage.removeItem('dsh.turn-collapse.v1')`，刷新 |
+需要 DSH web **0.1.2-alpha.1**（0.1.1 无官方折叠条，本插件不适用）。
 
 ## 配置（localStorage）
 
 | Key | 默认 | 作用 |
 |---|---|---|
+| `dsh.turn-collapse.completedOnly` | 未设 | 设为 `'1'` 后中断/报错/超限的轮不再折叠；删除该键恢复默认（尊重官方） |
 | `dsh.turn-collapse.autoLoad` | `'1'` | 设为 `'0'` 关闭"滚动近顶自动加载更早" |
-| `dsh.turn-collapse.debug` | 未设 | 设为 `'1'` 在控制台输出 reconcile 诊断日志 |
+
+## 回滚 / 卸载
+
+从 profile 的 `package.json` 删除 `@UNscientific-9/dsh-turnfold` 依赖行，执行 `pnpm install`，重启 DSH web 并硬刷新。插件全部影响都在浏览器侧（三个 localStorage 键 + 一个 `<style>` 标签），移除后刷新即回到纯官方折叠条。
 
 ## 文档
 
-- 完整使用指南与 FAQ：[plugin/README.md](plugin/README.md)
-- 架构（状态机 + DOM contract）：[plugin/docs/architecture.md](plugin/docs/architecture.md)
-- UI / CSS 规范：[plugin/docs/ui-spec.md](plugin/docs/ui-spec.md)
-- DSH 版本升级适配清单：[plugin/docs/maintenance.md](plugin/docs/maintenance.md)
+- 完整使用指南：[plugin/README.md](plugin/README.md)
+- 架构说明：[plugin/docs/architecture.md](plugin/docs/architecture.md)
+- 手工验证清单：[plugin/docs/manual-verification.md](plugin/docs/manual-verification.md)
 
 ## 许可
 
