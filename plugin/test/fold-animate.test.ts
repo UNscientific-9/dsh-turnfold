@@ -6,21 +6,27 @@ import {
   type FoldAnimateDeps,
 } from '../src/client/fold-animate.ts';
 
+interface FakeAnim {
+  frames: Keyframe[];
+  options: KeyframeAnimationOptions;
+  cancelled: boolean;
+  finish: () => void;
+  finished: Promise<unknown>;
+}
+
 interface FakeRow {
   el: HTMLElement;
   style: Record<string, string>;
   classes: Set<string>;
   height: number;
   marginTop: number;
-  transitionEnds: ((event: { target: unknown; propertyName: string }) => void)[];
-  signals: { aborted: boolean }[];
+  anims: FakeAnim[];
 }
 
 function makeRow(height: number, marginTop: number): FakeRow {
   const style: Record<string, string> = {};
   const classes = new Set<string>();
-  const transitionEnds: FakeRow['transitionEnds'] = [];
-  const signals: FakeRow['signals'] = [];
+  const anims: FakeAnim[] = [];
   const el = {
     style,
     classList: {
@@ -28,16 +34,21 @@ function makeRow(height: number, marginTop: number): FakeRow {
       remove: (name: string) => classes.delete(name),
     },
     offsetHeight: height,
-    addEventListener: (
-      _type: string,
-      fn: (event: { target: unknown; propertyName: string }) => void,
-      options: { signal: { aborted: boolean } },
-    ) => {
-      transitionEnds.push(fn);
-      signals.push(options.signal);
-    },
   } as unknown as HTMLElement;
-  return { el, style, classes, height, marginTop, transitionEnds, signals };
+  return { el, style, classes, height, marginTop, anims };
+}
+
+/** 假动画：记录 frames/options，finish() 手动 resolve。 */
+function makeFakeAnim(): FakeAnim {
+  let resolveFinish: (() => void) | undefined;
+  const anim: FakeAnim = {
+    frames: [],
+    options: {},
+    cancelled: false,
+    finish: () => resolveFinish?.(),
+    finished: new Promise((resolve) => { resolveFinish = resolve; }),
+  };
+  return anim;
 }
 
 /** 假帧/假定时器：用例手动推进，断言序列而不等待真实时间。 */
@@ -46,23 +57,23 @@ function makeDeps(rows: FakeRow[], reduced = false): {
   flushFrame: () => void;
   flushTimeout: () => void;
 } {
-  let frame: (() => void) | undefined;
-  let settle: (() => void) | undefined;
+  let frames: (() => void)[] = [];
+  let timeouts: (() => void)[] = [];
   return {
     deps: {
       requestFrame: (cb) => {
-        frame = cb;
-        return frame;
+        frames.push(cb);
+        return frames.length;
       },
       cancelFrame: () => {
-        frame = undefined;
+        frames = [];
       },
       scheduleTimeout: (cb) => {
-        settle = cb;
-        return settle;
+        timeouts.push(cb);
+        return timeouts.length;
       },
       cancelTimeout: () => {
-        settle = undefined;
+        timeouts = [];
       },
       measure: (el) => {
         const row = rows.find((candidate) => candidate.el === el);
@@ -70,18 +81,37 @@ function makeDeps(rows: FakeRow[], reduced = false): {
         return { height: row.height, marginTop: row.marginTop };
       },
       reducedMotion: () => reduced,
+      animate: (el, frames, options) => {
+        const row = rows.find((candidate) => candidate.el === el);
+        assert.ok(row !== undefined, 'animated an unknown element');
+        const anim = makeFakeAnim();
+        anim.frames = frames;
+        anim.options = options;
+        row.anims.push(anim);
+        return {
+          finished: anim.finished,
+          cancel: () => { anim.cancelled = true; },
+        };
+      },
     },
     flushFrame: () => {
-      const cb = frame;
-      frame = undefined;
-      cb?.();
+      for (let i = 0; i < 6; i += 1) {
+        const cb = frames.shift();
+        if (cb === undefined) break;
+        cb();
+      }
     },
     flushTimeout: () => {
-      const cb = settle;
-      settle = undefined;
+      const cb = timeouts.shift();
       cb?.();
     },
   };
+}
+
+/** 推进到「自然高就绪」完成（含微任务）。 */
+async function settleAnimation(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 test('processRowsSelector targets member rows of the turn that are not hidden', () => {
@@ -91,73 +121,82 @@ test('processRowsSelector targets member rows of the turn that are not hidden', 
   assert.match(selector, /:not\(\[data-turn-process-hidden\]\)/);
 });
 
-test('collapse locks current geometry, transitions to zero, then cleans up', () => {
+test('collapse animates from natural height to zero, then cleans up', async () => {
   const rows = [makeRow(120, 16), makeRow(80, 16)];
-  const { deps, flushFrame, flushTimeout } = makeDeps(rows);
+  const { deps, flushTimeout } = makeDeps(rows);
   const done: string[] = [];
   animateFoldRows(rows.map((row) => row.el), 'collapse', () => done.push('done'), deps);
+  await settleAnimation();
 
+  // 收起方向行本就可见：首帧测量即就绪 → WAAPI 从自然高 → 0。
   for (const row of rows) {
-    assert.equal(row.style.height, `${row.height}px`, 'collapse locks natural height first');
-    assert.equal(row.style.marginTop, `${row.marginTop}px`);
+    assert.equal(row.anims.length, 1, 'one animation per row');
+    const [from, to] = row.anims[0].frames;
+    assert.equal(from.height, `${row.height}px`, 'starts at natural height');
+    assert.equal(from.marginTop, `${row.marginTop}px`);
+    assert.equal(to.height, '0px', 'ends at zero');
     assert.equal(row.style.overflow, 'hidden');
     assert.ok(row.classes.has('dsh-tf-animating'));
   }
-  flushFrame();
-  for (const row of rows) {
-    assert.equal(row.style.height, '0px');
-    assert.equal(row.style.marginTop, '0px');
-    assert.equal(row.style.opacity, '0');
-  }
-  flushTimeout();
+  // 完成所有动画 → settle 清理
+  for (const row of rows) row.anims[0].finish();
+  await settleAnimation();
   for (const row of rows) {
     assert.equal(row.style.height, '', 'inline styles are handed back to official layout');
-    assert.equal(row.style.marginTop, '');
-    assert.equal(row.style.opacity, '');
-    assert.equal(row.style.overflow, '');
     assert.ok(!row.classes.has('dsh-tf-animating'));
   }
   assert.deepEqual(done, ['done']);
 });
 
-test('expand locks zero in the first frame, then reveals natural geometry', () => {
+test('expand animates from zero to natural height', async () => {
   const rows = [makeRow(120, 16)];
-  const { deps, flushFrame, flushTimeout } = makeDeps(rows);
+  const { deps, flushTimeout } = makeDeps(rows);
   const done: string[] = [];
   animateFoldRows(rows.map((row) => row.el), 'expand', () => done.push('done'), deps);
+  flushTimeout(); // 驱动测量轮询（expand 走 scheduleTimeout）
+  await settleAnimation();
 
-  assert.equal(rows[0].style.height, '0px', 'zero height is locked before any paint');
-  assert.equal(rows[0].style.opacity, '0');
-  flushFrame();
-  assert.equal(rows[0].style.height, '120px');
-  assert.equal(rows[0].style.marginTop, '16px');
-  assert.equal(rows[0].style.opacity, '', 'opacity returns to the official default');
-  flushTimeout();
-  assert.equal(rows[0].style.height, '');
+  assert.equal(rows[0].anims.length, 1);
+  const [from, to] = rows[0].anims[0].frames;
+  assert.equal(from.height, '0px', 'starts at zero');
+  assert.equal(to.height, '120px', 'ends at natural height');
+  rows[0].anims[0].finish();
+  await settleAnimation();
   assert.deepEqual(done, ['done']);
+  assert.equal(rows[0].style.height, '', 'cleaned up');
 });
 
-test('transitionend settles the animation without waiting for the timeout', () => {
+test('expand gives up (no styles) when height never becomes measurable', async () => {
+  // 模拟「行一直 hidden / 内容未物化」：measure 恒返回 0。
+  const rows = [makeRow(0, 0)];
+  const { deps, flushTimeout } = makeDeps(rows);
+  const done: string[] = [];
+  const handle = animateFoldRows(rows.map((row) => row.el), 'expand', () => done.push('done'), deps);
+  // 3 次轮询都测不到 → resolve([]) → settle 放弃动画，立即完成回调。
+  for (let i = 0; i < 4; i += 1) flushTimeout();
+  await settleAnimation();
+  assert.deepEqual(done, ['done'], 'measurement-failure falls back to instant switch');
+  assert.equal(rows[0].anims.length, 0, 'no animation was started');
+  assert.equal(rows[0].style.height, '', 'no style was written');
+  handle.cancel();
+});
+
+test('all rows settling via animation finish triggers done once', async () => {
   const rows = [makeRow(40, 8), makeRow(60, 8)];
-  const { deps, flushFrame, flushTimeout } = makeDeps(rows);
+  const { deps, flushTimeout } = makeDeps(rows);
   const done: string[] = [];
   animateFoldRows(rows.map((row) => row.el), 'expand', () => done.push('done'), deps);
-  flushFrame();
-
-  for (const row of rows) {
-    const handler = row.transitionEnds.at(-1);
-    assert.ok(handler !== undefined);
-    handler({ target: row.el, propertyName: 'height' });
-  }
-  assert.deepEqual(done, ['done'], 'all rows settled via transitionend');
-  assert.equal(rows[0].style.height, '', 'cleanup ran');
   flushTimeout();
-  assert.deepEqual(done, ['done'], 'timeout after settle is a no-op');
+  await settleAnimation();
+  for (const row of rows) row.anims[0].finish();
+  await settleAnimation();
+  assert.deepEqual(done, ['done']);
+  assert.equal(rows[0].style.height, '', 'cleanup ran');
 });
 
-test('reverse switches direction and swaps the completion callback', () => {
+test('reverse switches direction and swaps the completion callback', async () => {
   const rows = [makeRow(100, 12)];
-  const { deps, flushFrame, flushTimeout } = makeDeps(rows);
+  const { deps, flushTimeout } = makeDeps(rows);
   const done: string[] = [];
   const handle = animateFoldRows(
     rows.map((row) => row.el),
@@ -165,12 +204,36 @@ test('reverse switches direction and swaps the completion callback', () => {
     () => done.push('collapse'),
     deps,
   );
-  flushFrame();
+  await settleAnimation();
   handle.reverse(() => done.push('expand'));
-  assert.equal(rows[0].style.height, '100px', 'reverse targets natural geometry again');
-  assert.equal(rows[0].style.opacity, '');
-  flushTimeout();
+  // reverse 取消旧动画，从当前值反向再跑。
+  assert.equal(rows[0].anims[0].cancelled, true, 'old animation cancelled');
+  assert.equal(rows[0].anims.length, 2, 'new animation started');
+  const [from] = rows[0].anims[1].frames;
+  assert.equal(from.height, '0px', 'reverse to expand starts at zero');
+  rows[0].anims[1].finish();
+  await settleAnimation();
   assert.deepEqual(done, ['expand'], 'only the reversed callback fires');
+});
+
+test('reverse during measurement restarts with the new direction', async () => {
+  const rows = [makeRow(100, 12)];
+  const { deps, flushTimeout } = makeDeps(rows);
+  const done: string[] = [];
+  const handle = animateFoldRows(
+    rows.map((row) => row.el),
+    'expand',
+    () => done.push('expand'),
+    deps,
+  );
+  // 测量未完成时 reverse 到收起方向。
+  handle.reverse(() => done.push('collapse'));
+  await settleAnimation();
+  flushTimeout(); // 驱动新测量的轮询
+  await settleAnimation();
+  rows[0].anims[0]?.finish();
+  await settleAnimation();
+  assert.deepEqual(done, ['collapse'], 'measurement-phase reverse wins');
 });
 
 test('empty row list and reduced motion settle immediately without touching styles', () => {
@@ -189,29 +252,26 @@ test('empty row list and reduced motion settle immediately without touching styl
   assert.equal(reduced[0].style.height, undefined);
 });
 
-test('cancel cleans up without firing the completion callback', () => {
+test('cancel cleans up without firing the completion callback', async () => {
   const rows = [makeRow(90, 16)];
-  const { deps, flushFrame, flushTimeout } = makeDeps(rows);
+  const { deps } = makeDeps(rows);
   const done: string[] = [];
   const handle = animateFoldRows(rows.map((row) => row.el), 'collapse', () => done.push('done'), deps);
-  flushFrame();
+  await settleAnimation();
   handle.cancel();
+  assert.equal(rows[0].anims[0].cancelled, true, 'animation cancelled');
   assert.equal(rows[0].style.height, '', 'styles cleared');
   assert.ok(!rows[0].classes.has('dsh-tf-animating'));
-  flushTimeout();
   assert.deepEqual(done, [], 'cancel must not invoke onDone');
 });
 
-test('occluded tab: settle timeout fires even when the frame callback never runs', () => {
+test('cancel during measurement cleans up without firing the completion callback', async () => {
   const rows = [makeRow(120, 16)];
   const { deps, flushTimeout } = makeDeps(rows);
   const done: string[] = [];
-  // requestAnimationFrame 被注入为 no-op：模拟被遮挡/后台的 tab（帧完全
-  // 停发）。动画不能因此卡在锁定帧——兜底 timeout 必须独立于帧回调。
-  const frozenDeps: FoldAnimateDeps = { ...deps, requestFrame: () => 'never', cancelFrame: () => {} };
-  animateFoldRows(rows.map((row) => row.el), 'expand', () => done.push('done'), frozenDeps);
-  assert.equal(rows[0].style.height, '0px', 'locked before paint');
+  const handle = animateFoldRows(rows.map((row) => row.el), 'expand', () => done.push('done'), deps);
+  handle.cancel();
   flushTimeout();
-  assert.deepEqual(done, ['done'], 'fallback settle fired without any frame');
-  assert.equal(rows[0].style.height, '', 'cleanup ran');
+  assert.deepEqual(done, [], 'cancel during measurement must not invoke onDone');
+  assert.equal(rows[0].style.height, '', 'no style was written');
 });

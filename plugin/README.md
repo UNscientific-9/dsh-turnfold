@@ -112,5 +112,5 @@ test/                    node:test 单元测试（37 个用例）
 
 ## 版本历史
 
-- **0.3.0**：转型为官方折叠条增强插件——以 `priority:-1` shadow 官方 `turn-process` renderer，砍掉自有折叠条全家桶（projector/synth/summary-view/animate 等约 2500 行）；保留轮次状态机，新增用时/思考段数注入、展开决策持久化（官方 store 为内存态）、completed 白名单（可配默认关）、自动加载更早历史改走 `binding().session.loadOlder()`；展开/收起回归高度过渡动画（官方为瞬间切换，`dsh-tf-animating` 逐行 height/margin 过渡，动画中再次点击反转方向，`prefers-reduced-motion` 下跳过）；测试 57→45，DOM 集成 spec 废弃改手工验证清单
+- **0.3.0**：转型为官方折叠条增强插件——以 `priority:-1` shadow 官方 `turn-process` renderer，砍掉自有折叠条全家桶（projector/synth/summary-view/animate 等约 2500 行）；保留轮次状态机，新增用时/思考段数注入、展开决策持久化（官方 store 为内存态）、completed 白名单（可配默认关）、自动加载更早历史改走 `binding().session.loadOlder()`；展开/收起回归高度过渡动画——官方 hidden 在父组件 useLayoutEffect 切换（React 子先父后），动画先等成员行布局就绪（hidden 摘除、offsetHeight 非 0）再测量，用 Web Animations API（el.animate）驱动高度过渡（不依赖 rAF/CSS transition 起点帧，后台/未激活面板照常播放），动画中再次点击反转方向，`prefers-reduced-motion` 下跳过；测试 57→47，DOM 集成 spec 废弃改手工验证清单
 - **0.2.0~0.2.8**：自有折叠条时代（锚点修复、合成折叠条、自动加载、成员快照、动画与性能优化），0.1.1-rc.2 系列
