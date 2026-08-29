@@ -51,23 +51,14 @@ function makeFakeAnim(): FakeAnim {
   return anim;
 }
 
-/** 假帧/假定时器：用例手动推进，断言序列而不等待真实时间。 */
+/** 假定时器：用例手动推进，断言序列而不等待真实时间。 */
 function makeDeps(rows: FakeRow[], reduced = false): {
   deps: FoldAnimateDeps;
-  flushFrame: () => void;
   flushTimeout: () => void;
 } {
-  let frames: (() => void)[] = [];
   let timeouts: (() => void)[] = [];
   return {
     deps: {
-      requestFrame: (cb) => {
-        frames.push(cb);
-        return frames.length;
-      },
-      cancelFrame: () => {
-        frames = [];
-      },
       scheduleTimeout: (cb) => {
         timeouts.push(cb);
         return timeouts.length;
@@ -93,13 +84,6 @@ function makeDeps(rows: FakeRow[], reduced = false): {
           cancel: () => { anim.cancelled = true; },
         };
       },
-    },
-    flushFrame: () => {
-      for (let i = 0; i < 6; i += 1) {
-        const cb = frames.shift();
-        if (cb === undefined) break;
-        cb();
-      }
     },
     flushTimeout: () => {
       const cb = timeouts.shift();

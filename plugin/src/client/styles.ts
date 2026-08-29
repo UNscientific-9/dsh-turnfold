@@ -48,21 +48,13 @@ export const TURNFOLD_CSS = `
 .dsh-tf-augment {
   color: var(--dsw-alias-label-tertiary);
 }
-/* 折叠/展开动画（fold-animate.ts 挂到成员行 wrapper 上）：高度与相邻间距
- * （官方 column 相邻选择器给的 margin-top）一起过渡，收尾才不会跳一格。
- * overflow hidden 由这里提供；内联样式只写值，动画结束即被移除。 */
+/* 动画期类（fold-animate.ts 挂到成员行 wrapper）：动画由 WAAPI（el.animate）
+ * 驱动，这里只提供 overflow hidden 兜底；内联样式动画结束即被移除。 */
 .dsh-tf-animating {
   overflow: hidden;
-  transition:
-    height 220ms cubic-bezier(0.2, 0, 0, 1),
-    margin-top 220ms cubic-bezier(0.2, 0, 0, 1),
-    opacity 150ms ease;
 }
 @media (prefers-reduced-motion: reduce) {
   .dsh-tf-chevron {
-    transition: none;
-  }
-  .dsh-tf-animating {
     transition: none;
   }
 }

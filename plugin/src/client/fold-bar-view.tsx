@@ -2,16 +2,13 @@
  * 官方 `turn-process` 折叠条的 shadow renderer（priority -1 接管官方
  * TurnProcessNodeView 的渲染槽位）。
  *
- * 职责：
- * - 跟随官方行为：`foldable=false`（normal 模式 / 历史未齐 / 无定稿回答）
- *   不渲染，交还官方的内联平铺展示。
- * - 增强文案：官方计数段 + 用时 / 思考段数（经 `useTurnData('turn-activity')`
- *   读取本插件 definition 发布的增强 face；未就绪时退化为纯官方文案）。
- * - 展开决策持久化：官方 chat store 是内存态（刷新即失），这里把用户的
- *   展开决策写 localStorage，renderer 重挂载时经 `setOpen` 恢复。
- * - completed 白名单（可选，默认关）：终结原因非 completed 的轮强制展开
- *   且不渲染折叠条——`setOpen(true)` 经官方 store 回流，摘掉成员行 wrapper
- *   的 `hidden="until-found"`，等价于「该轮不折叠」。
+ * 职责：跟随官方行为（`foldable=false` 不渲染）；增强文案（用时 / 思考段数，
+ * 经 `useTurnData('turn-activity')` 读取本插件 definition 发布的 face，未
+ * 就绪退化为纯官方文案）；展开决策持久化（官方 chat store 是内存态，刷新
+ * 即失，这里把用户的展开决策写 localStorage，重挂载时经 `setOpen` 恢复）；
+ * completed 白名单（可选，默认关）：终结原因非 completed 的轮强制展开且不
+ * 渲染折叠条——`setOpen(true)` 经官方 store 回流摘掉成员行 wrapper 的
+ * `hidden="until-found"`，等价于「该轮不折叠」。
  *
  * 结构与官方 TurnProcessNodeView 一致（button + label + chevron），官方
  * data-* 契约全保留，样式复刻自官方 CSS module（见 styles.ts）。
