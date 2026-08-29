@@ -1,7 +1,7 @@
 {
   "name": "@UNscientific-9/dsh-turnfold",
   "description": "Enhancement layer for the built-in DSH 0.1.2 turn-process fold bar: duration + thinking-segment injection, expand-decision persistence, completed-only whitelist, and auto-load-older.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",

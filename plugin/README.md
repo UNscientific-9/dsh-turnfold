@@ -4,7 +4,7 @@ DSH Web 官方折叠条的**增强插件**。DSH 0.1.2 起内置了轮次过程�
 
 ![效果展示](docs/assets/foldbar-demo.png)
 
-*实际运行效果（DSH 0.1.2-alpha.1 + 本插件 0.3.0）：折叠条前半段 `43 次工具调用 · 15 条消息` 是官方计数文案，后半段 `· 用时 30分49秒` 是本插件注入的增强段（弱化色显示）；点击开合，刷新后自动恢复之前的展开状态。*
+*实际运行效果（DSH 0.1.2-alpha.1 + 本插件 0.3.1）：折叠条前半段 `43 次工具调用 · 15 条消息` 是官方计数文案，后半段 `· 用时 30分49秒` 是本插件注入的增强段（弱化色显示）；点击开合，刷新后自动恢复之前的展开状态。*
 
 | 增强 | 说明 |
 |---|---|
@@ -15,7 +15,7 @@ DSH Web 官方折叠条的**增强插件**。DSH 0.1.2 起内置了轮次过程�
 
 - 纯前端插件，不改 DSH 后端与会话存储，卸载无残留
 - 锁定：**DSH 0.1.2-alpha.1**（官方 `turn-process` 折叠、keyed slot `conversation.chat.node`、`useTurnData` 注入面）
-- 当前版本：**0.3.0**
+- 当前版本：**0.3.1**
 
 ## 工作方式
 
@@ -33,7 +33,7 @@ turn-activity definition（本插件）── 每轮状态机 ── turn/end �
 - 官方 `data-turn-process(-messages|-tool-calls|-subagents)` 契约全保留，另加 `data-dsh-tf-duration/-thinking`
 - 折叠条外观复刻官方 CSS module（`dsh-tf-` 固定类名 + `--dsw-alias-*` 设计令牌，明暗自适应）
 
-## 安装（拿到 `dsh-turnfold-0.3.0.tgz` 后）
+## 安装（拿到 `dsh-turnfold-0.3.1.tgz` 后）
 
 ### 前提
 
@@ -42,14 +42,14 @@ turn-activity definition（本插件）── 每轮状态机 ── turn/end �
 
 ### 步骤
 
-1. 把 `dsh-turnfold-0.3.0.tgz` 放到一个**固定目录**（路径不要带空格），记下完整路径。
+1. 把 `dsh-turnfold-0.3.1.tgz` 放到一个**固定目录**（路径不要带空格），记下完整路径。
 
 2. 编辑 DSH web profile 的依赖文件 `%USERPROFILE%\.dsh\profiles\web\package.json`，在 `dependencies` 里加一行（路径改成实际位置）：
 
    ```json
    {
      "dependencies": {
-       "@UNscientific-9/dsh-turnfold": "file:D:/deps/dsh-turnfold-0.3.0.tgz"
+       "@UNscientific-9/dsh-turnfold": "file:D:/deps/dsh-turnfold-0.3.1.tgz"
      }
    }
    ```
@@ -62,7 +62,7 @@ turn-activity definition（本插件）── 每轮状态机 ── turn/end �
 
 ### 确认装上了
 
-- 浏览器控制台出现：`[dsh.turnfold] v0.3.0 loaded`
+- 浏览器控制台出现：`[dsh.turnfold] v0.3.1 loaded`
 - 已完成的回答前出现官方样式的折叠条，计数后带灰色的 `· 用时 X · M 段思考`
 
 ## 使用与配置
@@ -112,5 +112,6 @@ test/                    node:test 单元测试（37 个用例）
 
 ## 版本历史
 
-- **0.3.0**：转型为官方折叠条增强插件——以 `priority:-1` shadow 官方 `turn-process` renderer，砍掉自有折叠条全家桶（projector/synth/summary-view/animate 等约 2500 行）；保留轮次状态机，新增用时/思考段数注入、展开决策持久化（官方 store 为内存态）、completed 白名单（可配默认关）、自动加载更早历史改走 `binding().session.loadOlder()`；展开/收起回归高度过渡动画——官方 hidden 在父组件 useLayoutEffect 切换（React 子先父后），动画先等成员行布局就绪（hidden 摘除、offsetHeight 非 0）再测量，用 Web Animations API（el.animate）驱动高度过渡（不依赖 rAF/CSS transition 起点帧，后台/未激活面板照常播放），动画中再次点击反转方向，`prefers-reduced-motion` 下跳过；测试 57→47，DOM 集成 spec 废弃改手工验证清单
+- **0.3.1**：修复展开/收起动画——官方 hidden 在父组件 useLayoutEffect 切换（React 子先父后），动画先等成员行布局就绪（hidden 摘除、offsetHeight 非 0）再测量，改用 Web Animations API（el.animate）驱动高度过渡（不依赖 rAF/CSS transition 起点帧，IAB 后台/未激活面板照常播放）；修复展开动画消失、收起瞬间跳 0/抽动；动画中再次点击反转方向，`prefers-reduced-motion` 下跳过；测试 47
+- **0.3.0**：转型为官方折叠条增强插件——以 `priority:-1` shadow 官方 `turn-process` renderer，砍掉自有折叠条全家桶（projector/synth/summary-view/animate 等约 2500 行）；保留轮次状态机，新增用时/思考段数注入、展开决策持久化（官方 store 为内存态）、completed 白名单（可配默认关）、自动加载更早历史改走 `binding().session.loadOlder()`；测试 57→47，DOM 集成 spec 废弃改手工验证清单
 - **0.2.0~0.2.8**：自有折叠条时代（锚点修复、合成折叠条、自动加载、成员快照、动画与性能优化），0.1.1-rc.2 系列
