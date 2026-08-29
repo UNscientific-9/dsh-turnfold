@@ -6,34 +6,32 @@ import {
 } from '../fixtures/helper.js';
 
 /**
- * Smoke #3: a user-driven toggle does not move the anchor row.
+ * Smoke #3：用户驱动的 toggle 不移动锚点行。
  *
- * The summary row sits at the TOP of its turn; toggling must keep it put.
- * `applyTurnCollapse(..., { userDriven: true })` short-circuits the scroll
- * compensation path entirely (architecture.md decision #6 / `applyPlan`
- * lines 736-748).
+ * summary 行位于 turn 顶部；toggle 必须让它原地不动。
+ * `applyTurnCollapse(..., { userDriven: true })` 完全短路滚动补偿路径
+ * （architecture.md 决策 #6）。
  *
- * The chat fixture has 5 turns. We start with the scroll viewport at a
- * known offset, expand turn 1, and assert the user message above turn 1
- * (`turn-head1`) stays within 2px of its original viewport position.
+ * chat fixture 有 5 个 turn。先把滚动视口停在一个已知偏移，展开 turn 1，
+ * 断言 turn 1 上方的用户消息（`turn-head1`）与原视口位置偏差 ≤ 2px。
  */
 test('user-driven toggle does not jump the anchor', async ({ page }) => {
   await bootstrapChat(page, 'chat.html');
 
-  // Park the viewport well below the top so the scroll container has room
-  // to drift if the projector is buggy.
+  // 把视口停在离顶部较远处，这样即使 projector 有 bug、滚动容器有漂移
+  // 也有可观测空间。
   await page.evaluate(() => {
     const scroller = document.querySelector<HTMLElement>('[data-conversation-scroll]');
     if (scroller) scroller.scrollTop = 240;
   });
 
-  // Measure the anchor (turn-head1) before the click.
+  // 点击前测锚点（turn-head1）。
   const before = await page.evaluate(() => {
     const anchor = document.querySelector<HTMLElement>('[data-chat-anchor-key="9:turn-head1"]');
     return anchor?.getBoundingClientRect().top ?? 0;
   });
 
-  // Expand turn 1 (currently auto-collapsed -> click expands it).
+  // 展开 turn 1（当前自动折叠 → 点击即展开）。
   await clickToggle(page, 1);
   await waitForAnimationDone(page);
 
@@ -42,6 +40,6 @@ test('user-driven toggle does not jump the anchor', async ({ page }) => {
     return anchor?.getBoundingClientRect().top ?? 0;
   });
 
-  // Strict 2px tolerance: the architecture promises a zero-jump toggle.
+  // 严格 2px 容差：架构承诺 toggle 零跳动。
   expect(Math.abs(after - before)).toBeLessThanOrEqual(2);
 });

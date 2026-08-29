@@ -12,17 +12,15 @@
  */
 
 /**
- * The chat column lays rows out with `gap: 16px` (host ChatView css) and rows
- * carry no margin of their own. During a height transition every changed row
- * therefore gets `margin-bottom: -16px` to cancel its gap: without it a fold
- * would end with a 16px×N jump when the rows leave flow (and an expand would
- * start with one).
+ * 聊天列以 `gap: 16px` 排布行（宿主 ChatView CSS），行自身无 margin。
+ * 高度过渡期间每个发生变化的行都要加 `margin-bottom: -16px` 抵消 gap：
+ * 否则折叠收尾时行脱离文档流会留下 16px×N 的跳动，展开则开头跳一下。
  */
 const COLUMN_GAP_PX = 16;
 const ANIMATE_MS = 220;
 const ANIMATE_FALLBACK_MS = 420;
 
-/** True when the OS asks for reduced motion; animation is skipped then. */
+/** 宿主要求减少动态效果时为 true；此时跳过动画。 */
 export function prefersReducedMotion(): boolean {
   return (
     typeof window !== 'undefined' &&
@@ -32,23 +30,18 @@ export function prefersReducedMotion(): boolean {
 }
 
 /**
- * Animate a fold (rows shrink and fade to zero) or unfold (rows grow and
- * fade in) with height/opacity transitions, then apply the final collapse
- * marker (`data-dsh-ta-collapsed`) and run `done`. Rows are marked with the
- * `dsh-ta-animating` class for the duration so background reconciles skip
- * them (`applyRowTargets`), and a newer animation interrupts the previous
- * one (its rows are reset to their natural state first).
+ * 折叠/展开动画：行高与透明度渐变到 0（折叠）或从 0 展开，结束后写入
+ * 最终的折叠标记（`data-dsh-ta-collapsed`）并执行 `done`。动画期间行带
+ * `dsh-ta-animating` class，背景 reconcile 据此跳过它们（`applyRowTargets`）；
+ * 新动画会打断旧动画（旧行先复位到自然状态）。
  *
- * Both directions happen entirely inside one task before the browser paints:
- * start state → force reflow → target state, so there is no flash of the
- * fully-expanded or fully-hidden intermediate layout. `margin-bottom` is
- * transitioned in parallel to cancel the column gap (see `COLUMN_GAP_PX`).
+ * 两个方向都在同一个任务内、浏览器绘制之前完成：起始态 → 强制 reflow →
+ * 目标态，因此不会闪现全展开或全隐藏的中间布局。`margin-bottom` 与高度
+ * 并行过渡以抵消列 gap（见 `COLUMN_GAP_PX`）。
  *
- * Heights are the row's RENDERED height (`offsetHeight`), not `scrollHeight`:
- * activity rows contain internally capped blocks (e.g. a tool body with
- * `max-height` + scroll), so `scrollHeight` is the full content height and
- * would yank the row taller than it ever renders — the "twitch" at the start
- * of a fold.
+ * 高度读的是行的渲染高度（`offsetHeight`）而非 `scrollHeight`：activity
+ * 行内部有封顶块（如 `max-height` + 滚动的工具体），`scrollHeight` 是完整
+ * 内容高度，会把行拉到从未渲染过的高度——即折叠起点的"抖动"。
  */
 export function beginAnimatedTransition(
   documentRef: Document,
@@ -84,13 +77,11 @@ export function beginAnimatedTransition(
   };
 
   if (hide) {
-    // Fold: rows are visible at their rendered height; pin the start state
-    // then transition height/opacity to zero. `offsetHeight` (not
-    // `scrollHeight`) so internally capped blocks keep their rendered size.
-    // Measure ALL rows before writing any style: a read after each write
-    // forces a separate layout pass per row (heavy tool cards make that
-    // measurably slow on click — the "delayed reaction" the user reported),
-    // while one batched read costs a single pass.
+    // 折叠：行以渲染高度可见；先钉住起始态，再把 height/opacity 过渡到 0。
+    // 用 `offsetHeight`（非 `scrollHeight`），内部封顶块保持渲染尺寸。
+    // 先批量测完所有行、再写任何样式：写之间夹读会迫使每行各走一次
+    // 布局（重型工具卡下点击可感知地变慢——用户报告的"点击延迟"），
+    // 而一次批量读只花一次布局。
     const heights = new Map<HTMLElement, string>();
     for (const el of els) heights.set(el, `${el.offsetHeight}px`);
     for (const [el, height] of heights) {
@@ -99,8 +90,8 @@ export function beginAnimatedTransition(
       el.style.marginBottom = '0px';
       el.style.opacity = '1';
     }
-    // DO NOT MOVE: synchronous reflow is intentional — commits the start
-    // state so the browser paints neither 0-height nor full-height first.
+    // 禁止挪动：同步 reflow 是刻意的——提交起始态，浏览器就不会先绘制
+    // 0 高度或全高度的中间帧。
     void documentRef.body.offsetHeight;
     for (const el of els) {
       el.style.height = '0px';
@@ -108,11 +99,9 @@ export function beginAnimatedTransition(
       el.style.opacity = '0';
     }
   } else {
-    // Rows are display:none; reveal them at zero height, measure the
-    // RENDERED height (`offsetHeight` — read right after the reveal, in the
-    // same task, so the browser never paints the full-size intermediate),
-    // then grow to it. Batched read before any write, same one-layout rule
-    // as the fold direction.
+    // 行是 display:none；以 0 高度显示、测渲染高度（`offsetHeight`——
+    // 紧跟显示读取，同一任务内，浏览器永远画不出全尺寸中间态），再长到
+    // 目标高度。先批量读再写，与折叠方向同一条单次布局规则。
     for (const el of els) delete el.dataset.dshTaCollapsed;
     const heights = new Map<HTMLElement, string>();
     for (const el of els) heights.set(el, `${el.offsetHeight}px`);
@@ -122,8 +111,7 @@ export function beginAnimatedTransition(
       el.style.marginBottom = `${-COLUMN_GAP_PX}px`;
       el.style.opacity = '0';
     }
-    // DO NOT MOVE: synchronous reflow is intentional — same reason as the
-    // fold direction above.
+    // 禁止挪动：同步 reflow 是刻意的，理由同折叠方向。
     void documentRef.body.offsetHeight;
     for (const [el, height] of heights) {
       el.style.height = height;
@@ -144,12 +132,12 @@ export function beginAnimatedTransition(
   animTimer = window.setTimeout(finish, ANIMATE_FALLBACK_MS);
 }
 
-/** Global animation state; single projector instance per document. */
+/** 全局动画状态；每个文档只有一个 projector 实例。 */
 let animToken = 0;
 const animatingRows = new Set<HTMLElement>();
 let animTimer: number | null = null;
 
-/** Reset every animating row to its natural (un-animated) state. */
+/** 把所有动画中的行复位到自然（未动画）状态。 */
 function interruptAnimation(): void {
   if (animTimer !== null) {
     window.clearTimeout(animTimer);

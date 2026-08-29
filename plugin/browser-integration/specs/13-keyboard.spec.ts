@@ -5,23 +5,22 @@ import {
 } from '../fixtures/helper.js';
 
 /**
- * Smoke #13: keyboard Enter and Space on a focused toggle drive the
- * same fold/unfold path as a click. The fixture's `wireToggle` listens
- * to `keydown` for `Enter` / `' '` and routes to the same
- * `applyTurnCollapse` call as the click handler.
+ * Smoke #13：聚焦折叠按钮后按 Enter 与 Space，走与点击相同的折叠/
+ * 展开路径。fixture 的 `wireToggle` 监听 `Enter` / `' '` 的 `keydown`，
+ * 路由到与点击处理器相同的 `applyTurnCollapse` 调用。
  */
 test('Enter and Space on a focused toggle drive the fold path', async ({ page }) => {
   await bootstrapChat(page, 'chat.html');
 
   const toggle = page.locator('.dsh-ta-root[data-dsh-ta-turn="2"] .dsh-ta-toggle');
 
-  // Turn 2 starts auto-collapsed (aria-expanded="false"). Pressing
-  // Enter on a focused button should expand it.
+  // turn 2 初始自动折叠（aria-expanded="false"）。聚焦按钮按 Enter
+  // 应展开它。
   await toggle.focus();
   await page.keyboard.press('Enter');
   await waitForToggleState(page, 2, 'true');
 
-  // Now press Space; it should collapse again.
+  // 再按 Space；应重新折叠。
   await toggle.focus();
   await page.keyboard.press('Space');
   await waitForToggleState(page, 2, 'false');

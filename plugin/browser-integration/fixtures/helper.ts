@@ -1,6 +1,6 @@
 import type { Page, Locator } from '@playwright/test';
 
-/** Minimal shape of the handle `lib/fixture.js` mounts on `window`. */
+/** `lib/fixture.js` 挂在 `window` 上的句柄的最小形状。 */
 export interface FixtureHandle {
   getProjector: () => unknown;
   getStore: () => {
@@ -10,6 +10,19 @@ export interface FixtureHandle {
   applyCollapse: (sessionId: string, turn: number, collapsed: boolean) => void;
   setCollapsed: (sessionId: string, turn: number, state: 'collapsed' | 'expanded') => void;
   getCollapsed: (sessionId: string, turn: number) => 'collapsed' | 'expanded' | undefined;
+  /** 与生产 summary-view.tsx 渲染时同一入口：记录一条成员事实快照。 */
+  rememberMembership: (
+    sessionId: string,
+    ref: {
+      turn: number;
+      finalStep?: number;
+      toolCallIds: readonly string[];
+      retryIds: readonly string[];
+      sessionId: string;
+    },
+  ) => void;
+  /** 与生产 index.ts 挂载时同一入口：从 localStorage 回灌快照缓存。 */
+  hydrateMembership: () => void;
 }
 
 declare global {
@@ -24,10 +37,9 @@ export interface BootstrapOptions {
 }
 
 /**
- * Load a fixture HTML page and wait until `lib/fixture.js` has booted the
- * projector (i.e. `window.__dshTurnfold` is defined). One rAF tick is
- * awaited so the projector's first reconcile has already happened before
- * the spec starts asserting.
+ * 加载 fixture HTML 页并等待 `lib/fixture.js` 启动完 projector
+ * （即 `window.__dshTurnfold` 已定义）。等待一个 rAF tick，
+ * 保证 projector 的首次 reconcile 在 spec 开始断言前已经发生。
  */
 export async function bootstrapChat(
   page: Page,
@@ -40,8 +52,8 @@ export async function bootstrapChat(
   if (opts.colorScheme) {
     await page.emulateMedia({ colorScheme: opts.colorScheme });
   }
-  // Always start each spec from a clean persistence snapshot so prior runs
-  // (or the spec's own `reload()`) cannot leak collapse decisions.
+  // 每次 spec 都从干净的持久化快照开始，避免此前运行（或 spec 自己的
+  // `reload()`）泄漏折叠决策。
   await page.addInitScript(() => {
     try {
       localStorage.removeItem('dsh.turn-collapse.v1');
@@ -52,8 +64,8 @@ export async function bootstrapChat(
   });
   await page.goto(fixture.startsWith('http') ? fixture : `http://127.0.0.1:3100/${fixture}`);
   await page.waitForFunction(() => window.__dshTurnfold !== undefined);
-  // One rAF tick so the projector's first reconcile + auto-collapse replay
-  // have happened before we assert.
+  // 等一帧 rAF，让 projector 的首次 reconcile 与自动折叠回放都在
+  // 断言前完成。
   await page.evaluate(
     () =>
       new Promise<void>((resolve) => {
@@ -62,28 +74,26 @@ export async function bootstrapChat(
   );
 }
 
-/** Click the toggle button for a given turn. The button itself carries no
- *  `data-dsh-ta-*` attributes (mirroring summary-view.tsx); locate it via
- *  the summary root's `data-dsh-ta-turn`. */
+/** 点击指定 turn 的折叠按钮。按钮自身不带 data-dsh-ta-* 属性
+ *  （与 summary-view.tsx 一致）；经 summary 根节点的 data-dsh-ta-turn 定位。 */
 export function toggleLocator(page: Page, turn: number): Locator {
   return page.locator(`.dsh-ta-root[data-dsh-ta-turn="${turn}"] .dsh-ta-toggle`);
 }
 
-/** Click the toggle and return the new `aria-expanded` value. */
+/** 点击折叠按钮并返回新的 `aria-expanded` 值。 */
 export async function clickToggle(page: Page, turn: number): Promise<boolean> {
   const locator = toggleLocator(page, turn);
   const before = await locator.getAttribute('aria-expanded');
   await locator.click();
-  // For prefers-reduced-motion the change is synchronous; otherwise we
-  // wait for the animation to settle before reading the attribute again.
+  // prefers-reduced-motion 下变化是同步的；否则等动画落定再读属性。
   await waitForAnimationDone(page);
   const after = await clickThenRead(page, turn, before);
   return after === 'true';
 }
 
 async function clickThenRead(page: Page, turn: number, before: string | null): Promise<string> {
-  // The fixture's click handler flips aria-expanded in the same frame the
-  // projector applies its state. Re-read after a microtask + rAF.
+  // fixture 的点击处理器与 projector 应用状态同帧翻转 aria-expanded。
+  // 等一个微任务 + rAF 后重读。
   await page.waitForFunction(
     (args) => {
       const el = document.querySelector(`.dsh-ta-root[data-dsh-ta-turn="${args.turn}"] .dsh-ta-toggle`);
@@ -100,7 +110,7 @@ async function clickThenRead(page: Page, turn: number, before: string | null): P
   );
 }
 
-/** Wait until the projector has no row in the `dsh-ta-animating` class. */
+/** 等到 projector 中不再有带 `dsh-ta-animating` class 的行。 */
 export async function waitForAnimationDone(page: Page): Promise<void> {
   await page.waitForFunction(
     () => document.querySelectorAll('.dsh-ta-animating').length === 0,
@@ -109,7 +119,7 @@ export async function waitForAnimationDone(page: Page): Promise<void> {
   );
 }
 
-/** Wait until the toggle's `aria-expanded` matches `expected`. */
+/** 等到折叠按钮的 `aria-expanded` 等于 `expected`。 */
 export async function waitForToggleState(
   page: Page,
   turn: number,

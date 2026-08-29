@@ -45,6 +45,33 @@
       head.textContent = 'user: long turn (100 tool calls)';
       flow.appendChild(head);
 
+      // 生产几何：折叠框固定在轮次顶部——用户消息之后、第一个活动行之前。
+      const root = document.createElement('div');
+      root.className = 'dsh-ta-root';
+      root.setAttribute('data-dsh-ta-turn', String(TURN));
+      root.setAttribute('data-dsh-ta-final-step', String(finalStep));
+      root.setAttribute('data-dsh-ta-tools', toolCallIds.join(','));
+      root.setAttribute('data-dsh-ta-thinking', '1');
+      root.setAttribute('data-dsh-ta-duration', '120000');
+      root.setAttribute('data-dsh-ta-session', 'fixture-session');
+      root.setAttribute('data-dsh-ta-auto-collapse', 'true');
+      const btn = document.createElement('button');
+      btn.className = 'dsh-ta-toggle';
+      // 按钮不带任何 data-dsh-ta-* 属性——真实 DSH 按钮只有 class +
+      // aria-expanded + title；这里若混入 data-dsh-ta-turn 会被当成
+      // 第二行 summary 收集，把根节点的成员事实清空。
+      btn.setAttribute('aria-expanded', 'false');
+      const label = document.createElement('span');
+      label.className = 'dsh-ta-label';
+      label.textContent = 'long-turn summary (100 tool calls)';
+      btn.appendChild(label);
+      root.appendChild(btn);
+      const divider = document.createElement('div');
+      divider.className = 'dsh-ta-divider';
+      divider.setAttribute('role', 'separator');
+      root.appendChild(divider);
+      flow.appendChild(root);
+
       // One thinking step + every tool call + the final step.
       const think = document.createElement('div');
       think.setAttribute('data-chat-anchor-key', '14:assistant-step' + TURN + ':0');
@@ -68,32 +95,6 @@
       finalRow.appendChild(thinkInline);
       finalRow.appendChild(document.createTextNode(' final answer'));
       flow.appendChild(finalRow);
-
-      const root = document.createElement('div');
-      root.className = 'dsh-ta-root';
-      root.setAttribute('data-dsh-ta-turn', String(TURN));
-      root.setAttribute('data-dsh-ta-final-step', String(finalStep));
-      root.setAttribute('data-dsh-ta-tools', toolCallIds.join(','));
-      root.setAttribute('data-dsh-ta-thinking', '1');
-      root.setAttribute('data-dsh-ta-duration', '120000');
-      root.setAttribute('data-dsh-ta-session', 'fixture-session');
-      root.setAttribute('data-dsh-ta-auto-collapse', 'true');
-      const btn = document.createElement('button');
-      btn.className = 'dsh-ta-toggle';
-      // No data-dsh-ta-* on the button — the real DSH button is bare class
-      // + aria-expanded + title; a stray `data-dsh-ta-turn` here would be
-      // collected as a second summary row and blank the root's facts.
-      btn.setAttribute('aria-expanded', 'false');
-      const label = document.createElement('span');
-      label.className = 'dsh-ta-label';
-      label.textContent = 'long-turn summary (100 tool calls)';
-      btn.appendChild(label);
-      root.appendChild(btn);
-      const divider = document.createElement('div');
-      divider.className = 'dsh-ta-divider';
-      divider.setAttribute('role', 'separator');
-      root.appendChild(divider);
-      flow.appendChild(root);
     })();
   </script>
   <script src="/lib/fixture.js"></script>

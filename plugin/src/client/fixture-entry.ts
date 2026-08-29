@@ -1,27 +1,24 @@
 /**
- * Browser-integration fixture entry.
+ * 浏览器集成测试的 fixture 入口。
  *
- * Loaded by `lib/fixture.js` (built by build.ps1) into the static DSH-mock
- * page under `browser-integration/fixtures/`. Boots the projector the same
- * way `src/client/index.ts` would, but without React / cordis — those
- * runtimes are not part of the projector's contract, so the static mock
- * page only needs the projector + store + membership cache, all of which
- * are DOM/localStorage operations.
+ * 由 build.ps1 构建出的 `lib/fixture.js` 加载进 `browser-integration/fixtures/`
+ * 下的静态 DSH 模拟页。以与 `src/client/index.ts` 相同的方式启动 projector，
+ * 但不带 React / cordis——这些运行时不是 projector 契约的一部分，静态模拟页
+ * 只需要 projector + store + membership 缓存，全是 DOM / localStorage 操作。
  *
- * Summary rows in the fixture page are bare DOM (not React-rendered) but
- * carry the exact `data-dsh-ta-*` attributes the projector reads. This
- * entry emulates the React view's two effects:
- *   1. On first mount of a completed turn, call store.setCollapsed
- *      + projector.applyTurnCollapse so the auto-collapse rule fires.
- *   2. On a toggle click or Enter/Space keypress, swap the decision and
- *      re-apply (userDriven).
+ * fixture 页里的 summary 行是裸 DOM（非 React 渲染），但携带 projector 读取
+ * 的完整 `data-dsh-ta-*` 属性。本入口模拟 React 视图的两个 effect：
+ *   1. 已完成 turn 首次挂载时调用 store.setCollapsed + projector.applyTurnCollapse
+ *      使自动折叠规则生效。
+ *   2. 点击折叠条或按 Enter/Space 时翻转决策并重新应用（userDriven）。
  *
- * The auto-collapse decision is driven by a `data-dsh-ta-auto-collapse`
- * attribute on the summary row (the fixture cannot read the engine's
- * TurnActivitySummary node data, so each test sets this attribute per
- * turn to express its `shouldAutoCollapse` verdict).
+ * 自动折叠决策由 summary 行上的 `data-dsh-ta-auto-collapse` 属性驱动
+ * （fixture 读不到引擎的 TurnActivitySummary 节点数据，因此每个测试
+ * 逐 turn 设置该属性来表达自己的 `shouldAutoCollapse` 判定）。
  */
+import { hydrateMembership, rememberMembership } from './row-membership.ts';
 import { getProjector, getStore, setCurrentSessionReader } from './singletons.ts';
+import type { SummaryRef } from './types.ts';
 
 const projector = getProjector();
 const store = getStore();
@@ -34,6 +31,10 @@ interface WindowWithFixture extends Window {
     applyCollapse: (sessionId: string, turn: number, collapsed: boolean) => void;
     setCollapsed: (sessionId: string, turn: number, state: 'collapsed' | 'expanded') => void;
     getCollapsed: (sessionId: string, turn: number) => 'collapsed' | 'expanded' | undefined;
+    /** 与生产 summary-view.tsx 渲染时同一入口：记录一条成员事实快照。 */
+    rememberMembership: (sessionId: string, ref: SummaryRef) => void;
+    /** 与生产 index.ts 挂载时同一入口：从 localStorage 回灌快照缓存。 */
+    hydrateMembership: () => void;
   };
 }
 
@@ -50,11 +51,11 @@ function readTurnFromElement(el: Element): number | null {
   return Number.isFinite(turn) ? turn : null;
 }
 
-/** Replay the summary-view's first-mount auto-collapse effect. */
+/** 复现 summary-view 首次挂载时的自动折叠 effect。 */
 function replayAutoCollapse(): void {
-  // Only summary ROOTS carry `data-dsh-ta-turn` (mirroring summary-view.tsx);
-  // the toggle button inside is deliberately bare, so `[data-dsh-ta-turn]`
-  // alone must never be used here — it would collect the buttons too.
+  // 只有 summary 根节点带 `data-dsh-ta-turn`（与 summary-view.tsx 一致）；
+  // 内部的折叠按钮刻意不带，所以此处绝不能只凭 `[data-dsh-ta-turn]`
+  // 查询——否则会把按钮也收集进来。
   for (const el of document.querySelectorAll<HTMLElement>('.dsh-ta-root[data-dsh-ta-turn]')) {
     const sessionId = readSessionIdFromElement(el);
     const turn = readTurnFromElement(el);
@@ -69,8 +70,8 @@ function replayAutoCollapse(): void {
 }
 
 function applyFromButton(btn: HTMLButtonElement, collapsed: boolean): void {
-  // The button carries no data-dsh-ta-* attributes (same as the real DSH
-  // view); the membership facts live on the summary root.
+  // 按钮自身不带任何 data-dsh-ta-* 属性（与真实 DSH 视图一致）；
+  // 成员事实挂在 summary 根节点上。
   const root = btn.closest<HTMLElement>('.dsh-ta-root');
   if (root === null) return;
   const sessionId = readSessionIdFromElement(root);
@@ -78,8 +79,8 @@ function applyFromButton(btn: HTMLButtonElement, collapsed: boolean): void {
   if (turn === null) return;
   const state = collapsed ? 'collapsed' : 'expanded';
   store.setCollapsed(sessionId, turn, state);
-  // The real view's React render owns `aria-expanded`; this fixture has no
-  // React, so the button attribute is synced here to mirror that contract.
+  // 真实视图的 React 渲染持有 `aria-expanded`；本 fixture 没有 React，
+  // 所以在这里同步按钮属性以维持同一契约。
   btn.setAttribute('aria-expanded', String(!collapsed));
   projector.applyTurnCollapse(sessionId, turn, collapsed, { userDriven: true });
 }
@@ -98,9 +99,13 @@ function wireToggle(btn: HTMLButtonElement): void {
   });
 }
 
-// Default the projector session reader to a stable fixture id so
-// single-column fixture pages resolve without extra DOM probing.
+// 默认把 projector 的会话读取器指向稳定的 fixture 会话 id，
+// 单列 fixture 页无需额外的 DOM 探测即可解析。
 setCurrentSessionReader(() => 'fixture-session');
+
+// 镜像生产 index.ts 的挂载顺序：先把 localStorage 里的成员事实快照回灌进
+// 内存缓存，再启动 projector——刷新后旧 turn 才能带着准确 facts 折叠。
+hydrateMembership(typeof localStorage !== 'undefined' ? localStorage : undefined);
 
 replayAutoCollapse();
 projector.start();
@@ -119,11 +124,10 @@ window.__dshTurnfold = {
   },
   setCollapsed: (sessionId, turn, state) => {
     store.setCollapsed(sessionId, turn, state);
-    // The real view's `useSyncExternalStore` subscription re-renders
-    // `aria-expanded` when the store changes; the fixture has no React, so
-    // sync every matching toggle here to keep click-direction semantics
-    // (`aria-expanded === 'false'` means collapsed) consistent with the
-    // store.
+    // 真实视图的 `useSyncExternalStore` 订阅会在 store 变化时重渲染
+    // `aria-expanded`；本 fixture 没有 React，所以在这里同步每个匹配的
+    // 折叠按钮，保持点击方向语义（`aria-expanded === 'false'` 表示已
+    // 折叠）与 store 一致。
     for (const root of document.querySelectorAll<HTMLElement>('.dsh-ta-root[data-dsh-ta-turn]')) {
       if (
         root.getAttribute('data-dsh-ta-session') === sessionId &&
@@ -135,4 +139,7 @@ window.__dshTurnfold = {
     }
   },
   getCollapsed: (sessionId, turn) => store.getCollapsed(sessionId, turn),
+  rememberMembership,
+  hydrateMembership: () =>
+    hydrateMembership(typeof localStorage !== 'undefined' ? localStorage : undefined),
 };

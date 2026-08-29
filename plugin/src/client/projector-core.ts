@@ -235,9 +235,9 @@ export function createProjector(
     // render the same turn number at once — resolving by the caller's
     // session (via `pickSummaryRowBySession`) is what keeps a multi-session
     // document from applying this decision to another column's
-    // identically-numbered turn. Fall back to the synthesized bar's row,
-    // then to the first `[data-chat-flow]` — a single-column host in that
-    // case still resolves the column from the only one available.
+    // identically-numbered turn. Fall back to the synthesized bar's row;
+    // no match at all → give up (约束 2：多列场景禁止回退全局
+    // querySelector，宁可保守不折叠也不跨列误折叠).
     const summaryRow = pickSummaryRowBySession(
       Array.from(document.querySelectorAll<HTMLElement>(`[${DATA_TURN}="${turn}"]`)),
       session,
@@ -247,9 +247,6 @@ export function createProjector(
     if (column === null) {
       const synthRow = document.querySelector<HTMLElement>(`[${DATA_SYNTH_TURN}="${turn}"]`);
       column = synthRow !== null ? synthRow.closest<HTMLElement>('[data-chat-flow]') : null;
-    }
-    if (column === null) {
-      column = document.querySelector<HTMLElement>('[data-chat-flow]');
     }
     if (column === null) return;
     // DOM summaries merged with the membership snapshot cache and the

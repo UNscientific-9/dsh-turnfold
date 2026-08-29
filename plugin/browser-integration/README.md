@@ -1,54 +1,48 @@
-# Browser integration
+# 浏览器集成测试
 
-Playwright + Chromium smoke suite for the `dsh-turnfold` projector.
+`dsh-turnfold` projector 的 Playwright + Chromium 冒烟测试套件。
 
-This is **not** a DSH end-to-end suite. The `fixtures/` directory holds
-**hand-written DSH-mock pages** that carry the same `data-chat-*` /
-`data-dsh-ta-*` attributes the real DSH chat view renders. The plugin's
-projector + store + membership cache are loaded by `lib/fixture.js` (a
-purpose-built IIFE bundle) and driven by Playwright through the
-`window.__dshTurnfold` handle the fixture exposes.
+这**不是** DSH 端到端测试。`fixtures/` 目录是**手写的 DSH 模拟页**，携带真实
+DSH 聊天视图渲染的同一批 `data-chat-*` / `data-dsh-ta-*` 属性。插件的
+projector + store + membership 缓存由 `lib/fixture.js`（专用的 IIFE bundle）
+加载，Playwright 经 fixture 暴露的 `window.__dshTurnfold` 句柄驱动。
 
-The intent is a regression net for projector behaviour: auto-collapse on
-`reason.kind === 'completed'`, no auto-fold for interrupted turns, scroll
-stability on toggle, animation height sanity, persistence across reload,
-synthesised fold bars, keyboard accessibility, and light/dark + reduced-
-motion variants.
+定位是 projector 行为的回归网：`reason.kind === 'completed'` 自动折叠、中断
+turn 不自动折叠、toggle 滚动稳定、动画高度合理性、刷新后恢复、合成折叠条、
+键盘可达性、明暗主题与减少动态效果变体。
 
-## Running
+## 运行
 
-From `plugin/`:
+在 `plugin/` 下：
 
 ```bash
-npm install --ignore-scripts              # DSH sandbox disables postinstall
-npm run build                              # produces lib/fixture.js
-npm run test:browser                       # 13 smoke specs
+npm install --ignore-scripts              # DSH 沙箱禁用 postinstall
+npm run build                              # 产出 lib/fixture.js
+npm run test:browser                       # 13 个冒烟 spec
 ```
 
-The suite runs on the system-installed **Edge** (`channel: 'msedge'` in
-`playwright.config.ts`), so no browser download is needed. If Edge is
-unavailable on another machine, switch the `channel` to `'chrome'` or
-`'chromium'` (and run `npx playwright install chromium` once).
+套件运行在系统安装的 **Edge** 上（`playwright.config.ts` 的
+`channel: 'msedge'`），无需下载浏览器。其他机器若无 Edge，把 `channel` 改成
+`'chrome'` 或 `'chromium'`（并执行一次 `npx playwright install chromium`）。
 
-`playwright.config.ts` starts a static file server on `127.0.0.1:3100`
-(`server.mjs`) that serves both the fixture HTML pages and the
-`lib/fixture.js` bundle. The server runs in the foreground as Playwright's
-`webServer`; pass `reuseExistingServer: true` to skip restart when one
-is already up.
+`playwright.config.ts` 会在 `127.0.0.1:3100` 起一个静态文件服务器
+（`server.mjs`），同时服务 fixture HTML 页和 `lib/fixture.js` bundle。
+服务器以前台方式作为 Playwright 的 `webServer` 运行；`reuseExistingServer:
+true` 表示已有实例时跳过重启。
 
-The suite is **not** wired into CI by design. DSH sandboxes do not have
-the chromium binary available; this is a developer-local regression net.
+本套件**刻意不接入 CI**。DSH 沙箱没有 chromium 可执行文件；这是开发者
+本地的回归网。
 
-## Layout
+## 布局
 
 ```
 browser-integration/
-├── playwright.config.ts     # testDir, workers=1 (shared module-level state)
-├── server.mjs               # static server on 127.0.0.1:3100
+├── playwright.config.ts     # testDir、workers=1（共享模块级状态）
+├── server.mjs               # 127.0.0.1:3100 静态服务器
 ├── fixtures/
-│   ├── chat.html            # 4 completed + 1 interrupted turn
-│   ├── long-conversation.html  # 1 turn, 100 tool calls
-│   ├── no-summary.html      # 1 turn with no summary row (synth path)
+│   ├── chat.html            # 4 个已完成 turn + 1 个中断 turn
+│   ├── long-conversation.html  # 1 个 turn、100 个工具调用
+│   ├── no-summary.html      # 1 个无 summary 行的 turn（synth 路径）
 │   └── helper.ts            # bootstrapChat / clickToggle / waitForAnimationDone
 ├── specs/
 │   ├── 01-completed-fold.spec.ts
@@ -67,58 +61,56 @@ browser-integration/
 └── README.md
 ```
 
-## What the fixture exposes
+## fixture 暴露的句柄
 
-`lib/fixture.js` (built from `src/client/fixture-entry.ts`) attaches
-`window.__dshTurnfold` with:
+`lib/fixture.js`（由 `src/client/fixture-entry.ts` 构建）挂载
+`window.__dshTurnfold`：
 
-- `getProjector()`, `getStore()` — the same singletons the React view uses
-- `setSession(sessionId)` — drives the projector's column-owner probe
-- `applyCollapse(sessionId, turn, collapsed)` — synchronous fold/unfold
-  (with `userDriven: true`; for the animation-path spec the
-  `setCollapsed(...)` route is used to bypass userDriven and watch the
-  MutationObserver-driven reconcile)
-- `setCollapsed(sessionId, turn, state)`, `getCollapsed(...)` —
-  passthrough to the persistence-backed `CollapseStore`
+- `getProjector()`、`getStore()` — 与 React 视图同一批单例
+- `setSession(sessionId)` — 驱动 projector 的列归属探测
+- `applyCollapse(sessionId, turn, collapsed)` — 同步折叠/展开（内部固定
+  `userDriven: true`，走 apply-plan.ts 的动画分支；04 spec 靠它采样真实
+  220ms 高度渐变）
+- `setCollapsed(sessionId, turn, state)`、`getCollapsed(...)` — 直通带持久
+  化的 `CollapseStore`（写 store 触发的是无动画的背景 reconcile 路径）
+- `rememberMembership(sessionId, ref)` — 与生产 summary-view.tsx 渲染时
+  同一入口，记录一条成员事实快照（内存缓存 + localStorage 防抖落盘）
+- `hydrateMembership()` — 与生产 index.ts 挂载时同一入口，从 localStorage
+  回灌快照缓存
 
-Summary rows in the fixture pages carry `data-dsh-ta-auto-collapse="true"`
-or `"false"` to express each turn's `shouldAutoCollapse` verdict (the
-fixture cannot read the engine's `TurnActivitySummary` node data, so the
-test page declares the verdict per row).
+fixture 页的 summary 行带 `data-dsh-ta-auto-collapse="true"` 或 `"false"`，
+表达每个 turn 的 `shouldAutoCollapse` 判定（fixture 读不到引擎的
+`TurnActivitySummary` 节点数据，因此测试页逐行声明判定结果）。
 
-Toggle buttons (`<button class="dsh-ta-toggle">`) are wired by the
-fixture entry: `click` and `keydown` (Enter / Space) both route to the
-same `applyTurnCollapse` call the React view would make.
+折叠按钮（`<button class="dsh-ta-toggle">`)由 fixture 入口接线：`click` 与
+`keydown`（Enter / Space）都路由到与 React 视图相同的 `applyTurnCollapse`
+调用。
 
-## Why a separate bundle instead of `lib/client.js`?
+## 为什么用独立 bundle 而不是 `lib/client.js`？
 
-`lib/client.js` is a CJS bundle wrapped in `window.__ModuleLoader__.load`
-with `react`, `react/jsx-runtime`, and `@deepseek-ai/*` marked as
-external — it requires a real DSH host. The projector itself (the file
-we are actually testing) is a pure DOM + `localStorage` module and has
-no runtime React / cordis dependency; the IIFE `lib/fixture.js` is a
-purpose-built bundle that contains only the projector + store +
-membership modules, so the static fixture pages can run it without a
-DSH host.
+`lib/client.js` 是包在 `window.__ModuleLoader__.load` 里的 CJS bundle，
+`react`、`react/jsx-runtime` 与 `@deepseek-ai/*` 标记为 external——它需要
+真实的 DSH 宿主。而 projector 本身（我们真正要测的文件）是纯 DOM +
+`localStorage` 模块，没有 React / cordis 运行时依赖；IIFE 的
+`lib/fixture.js` 是只含 projector + store + membership 模块的专用 bundle，
+静态 fixture 页无需 DSH 宿主即可运行。
 
-## Debugging a single spec
+## 调试单个 spec
 
 ```bash
 npx playwright test --config=browser-integration/playwright.config.ts specs/03-toggle-no-jump.spec.ts
 ```
 
-Set `headless: false` in `playwright.config.ts` to watch the animation
-in a real browser. The fixture page is also reachable directly:
-`http://127.0.0.1:3100/chat.html` after running the server standalone:
+把 `playwright.config.ts` 的 `headless` 改成 `false` 可以在真实浏览器里看
+动画。服务器单独启动后 fixture 页也可以直接访问：
+`http://127.0.0.1:3100/chat.html`：
 
 ```bash
 node plugin/browser-integration/server.mjs
 ```
 
-## When the projector refactor lands
+## projector 重构落地时
 
-The 13 specs are the **regression net for the `refactor/projector-split`
-work** (see `plugin/docs/architecture.md` + the plan in
-`github-groovy-frost.md`). Every refactor commit must keep the suite at
-13/13; a flake is treated as a behaviour change and the commit is
-reverted.
+这 13 个 spec 是 **`refactor/projector-split` 工作的回归网**（见
+`plugin/docs/architecture.md`）。每个重构提交都必须保持套件 13/13；
+出现 flake 一律按行为变化处理并回退提交。

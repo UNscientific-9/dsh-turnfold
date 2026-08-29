@@ -6,34 +6,32 @@ import {
 } from '../fixtures/helper.js';
 
 /**
- * Smoke #10: folding a turn with 100 tool calls completes within 2s.
+ * Smoke #10：折叠含 100 个工具调用的 turn 须在 2 秒内完成。
  *
- * The 0.2.7 release notes call out fold-response performance
- * (row-attribution index + batched measurement). This is the regression
- * guard: collapsing a 100-row turn must finish the animation (no
- * `dsh-ta-animating` rows left) within 2 seconds wall-clock.
+ * 0.2.7 发布说明点名折叠响应性能（行归属索引 + 批量测量）。这是回归
+ * 守护：折叠 100 行的 turn 必须在 2 秒墙钟内完成动画（不残留
+ * `dsh-ta-animating` 行）。
  */
 test('100-row turn folds within 2 seconds', async ({ page }) => {
   await bootstrapChat(page, 'long-conversation.html');
 
-  // Sanity: the fixture really did render 100 tool-call rows.
+  // 合理性检查：fixture 确实渲染了 100 行 tool-call。
   const toolCount = await page
     .locator('[data-chat-anchor-key^="9:tool-callc"]')
     .count();
   expect(toolCount).toBe(100);
 
-  // Turn 0 starts auto-collapsed -> click to EXPAND first; this also
-  // measures the expand path's animation.
+  // turn 0 初始自动折叠 → 先点击展开；顺带测展开路径的动画。
   const t0 = await page.evaluate(() => performance.now());
   await clickToggle(page, 0);
   await waitForAnimationDone(page);
   const expandMs = await page.evaluate((start) => performance.now() - start, t0);
-  expect(expandMs, 'expand must finish under 2s').toBeLessThan(2000);
+  expect(expandMs, '展开必须在 2 秒内完成').toBeLessThan(2000);
 
-  // Now collapse again; this is the "fold" path the spec is named for.
+  // 再折叠；这是本 spec 得名的"折叠"路径。
   const t1 = await page.evaluate(() => performance.now());
   await clickToggle(page, 0);
   await waitForAnimationDone(page);
   const collapseMs = await page.evaluate((start) => performance.now() - start, t1);
-  expect(collapseMs, 'collapse must finish under 2s').toBeLessThan(2000);
+  expect(collapseMs, '折叠必须在 2 秒内完成').toBeLessThan(2000);
 });
