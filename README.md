@@ -4,7 +4,7 @@
 
 # dsh-turnfold
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE) [![DSH](https://img.shields.io/badge/DSH-0.1.2--alpha.1-blue?style=flat-square)](https://github.com/deepseek-ai/dsh-client-runtime) [![Release](https://img.shields.io/badge/Release-v0.3.1-green?style=flat-square)](https://github.com/UNscientific-9/dsh-turnfold/releases/tag/v0.3.1) ![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue?style=flat-square)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE) [![DSH](https://img.shields.io/badge/DSH-0.1.2--alpha.1-blue?style=flat-square)](https://github.com/deepseek-ai/dsh-client-runtime) [![Release](https://img.shields.io/badge/Release-v0.3.2-green?style=flat-square)](https://github.com/UNscientific-9/dsh-turnfold/releases/tag/v0.3.2) ![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue?style=flat-square)
 
 > An enhancement plugin for the **official turn fold bar** built into [DSH Web](https://github.com/deepseek-ai/dsh-client-runtime) 0.1.2 —
 > it takes over the official `turn-process` renderer with an identical look and behaviour, and adds four enhancements the official bar doesn't have, purely client-side.
@@ -50,19 +50,19 @@ Takeover: `ctx.slots.register({ key: 'turn-process', priority: -1 })` — the lo
 <details>
 <summary><b>Install</b> (4 steps)</summary>
 
-1. Get `dsh-turnfold-0.3.1.tgz` (see [Releases](https://github.com/UNscientific-9/dsh-turnfold/releases)) and put it in a fixed directory.
+1. Get `dsh-turnfold-0.3.2.tgz` (see [Releases](https://github.com/UNscientific-9/dsh-turnfold/releases)) and put it in a fixed directory.
 2. Edit the DSH web profile's `%USERPROFILE%\.dsh\profiles\web\package.json` and add the dependency:
 
    ```json
    {
      "dependencies": {
-       "@UNscientific-9/dsh-turnfold": "file:D:/path/to/dsh-turnfold-0.3.1.tgz"
+       "@UNscientific-9/dsh-turnfold": "file:D:/path/to/dsh-turnfold-0.3.2.tgz"
      }
    }
    ```
 
 3. In the profile directory, run `pnpm install`, then restart DSH web and hard-refresh the browser (`Ctrl+Shift+R`).
-4. The browser console should show `[dsh.turnfold] v0.3.1 loaded`, and completed turns get the official-style fold bar with a faded `· took X · M thinking segments` tail.
+4. The browser console should show `[dsh.turnfold] v0.3.2 loaded`, and completed turns get the official-style fold bar with a faded `· took X · M thinking segments` tail.
 
 Requires DSH web **0.1.2-alpha.1** (0.1.1 has no official fold bar — this plugin does not apply).
 

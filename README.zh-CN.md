@@ -4,7 +4,7 @@
 
 # dsh-turnfold
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE) [![DSH](https://img.shields.io/badge/DSH-0.1.2--alpha.1-blue?style=flat-square)](https://github.com/deepseek-ai/dsh-client-runtime) [![Release](https://img.shields.io/badge/Release-v0.3.1-green?style=flat-square)](https://github.com/UNscientific-9/dsh-turnfold/releases/tag/v0.3.1) ![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue?style=flat-square)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE) [![DSH](https://img.shields.io/badge/DSH-0.1.2--alpha.1-blue?style=flat-square)](https://github.com/deepseek-ai/dsh-client-runtime) [![Release](https://img.shields.io/badge/Release-v0.3.2-green?style=flat-square)](https://github.com/UNscientific-9/dsh-turnfold/releases/tag/v0.3.2) ![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue?style=flat-square)
 
 > [DSH Web](https://github.com/deepseek-ai/dsh-client-runtime) 0.1.2 内置官方轮次折叠条的**增强插件**——
 > 以相同的外观与行为接管官方 `turn-process` 渲染，纯前端叠加四项官方没有的增强
@@ -50,19 +50,19 @@ flowchart TB
 <details>
 <summary><b>安装</b>（4 步）</summary>
 
-1. 拿到 `dsh-turnfold-0.3.1.tgz`（见 [Releases](https://github.com/UNscientific-9/dsh-turnfold/releases)），放到一个固定目录（路径不要带空格）。
+1. 拿到 `dsh-turnfold-0.3.2.tgz`（见 [Releases](https://github.com/UNscientific-9/dsh-turnfold/releases)），放到一个固定目录（路径不要带空格）。
 2. 编辑 DSH web profile 的依赖文件 `%USERPROFILE%\.dsh\profiles\web\package.json`，在 `dependencies` 里加一行（路径改成实际位置）：
 
    ```json
    {
      "dependencies": {
-       "@UNscientific-9/dsh-turnfold": "file:D:/path/to/dsh-turnfold-0.3.1.tgz"
+       "@UNscientific-9/dsh-turnfold": "file:D:/path/to/dsh-turnfold-0.3.2.tgz"
      }
    }
    ```
 
 3. 在 profile 目录执行 `pnpm install`，重启 DSH web，浏览器硬刷新（`Ctrl+Shift+R`）。
-4. 浏览器控制台出现 `[dsh.turnfold] v0.3.1 loaded`，已完成回答前出现官方样式折叠条，计数后带灰色 `· 用时 X · M 段思考`。
+4. 浏览器控制台出现 `[dsh.turnfold] v0.3.2 loaded`，已完成回答前出现官方样式折叠条，计数后带灰色 `· 用时 X · M 段思考`。
 
 需要 DSH web **0.1.2-alpha.1**（0.1.1 无官方折叠条，本插件不适用）。
 
