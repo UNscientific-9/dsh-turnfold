@@ -1,24 +1,21 @@
 /**
  * turn-activity ConversationNodeDefinition: one engine context per turn that
- * accumulates activity facts from the raw session log and materializes the
- * summary row (and its turn-scoped data) exactly when the turn has ended with
+ * accumulates activity facts from the raw session log and publishes the
+ * augment data onto the turn's location exactly when the turn has ended with
  * a final message.
  *
- * The summary node's anchor is the TOP of the turn — `firstActivitySeq - 0.5`
- * (frozen at `turn/end` by the state machine) — which the chat assembler
- * sorts after the user/context rows and before the first activity row: the
- * fold control is the turn's head, and activity expands/collapses beneath
- * it.
+ * 0.3 起本 definition 不再产出自有视图节点：折叠条本体由官方
+ * `turn-process` renderer 承担（本插件以 priority -1 shadow 接管渲染），
+ * 这里只负责把状态机算出的增强事实（用时 / 思考段数 / 终结原因）投喂到
+ * Turn location，供 shadow renderer 经 `useTurnData('turn-activity')` 读取。
  */
 import type {
-  ConversationLocation,
+  ConversationLocationData,
   ConversationMatch,
   ConversationNodeContext,
   ConversationNodeDefinition,
 } from '@deepseek-ai/dsh-client-ui-conversation/client';
-// 0.1.2：Chat 渲染单元类型（target:'chat' + anchorSeq）从 client-runtime
-// 移到了 ui-chat 包。
-import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client';
+import type { TurnActivityAugment } from './activity-augment.ts';
 import {
   initialTurnActivityState,
   matchTurnActivity,
@@ -26,47 +23,16 @@ import {
   TURN_ACTIVITY_KIND,
   updateTurnActivityState,
   type TurnActivityState,
-  type TurnActivitySummary,
 } from './activity-state.ts';
 
 declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   interface ConversationTurnDataMap {
-    /** Completed-turn activity facts for the turn-activity surface. */
-    'turn-activity': TurnActivitySummary;
+    /** 官方折叠条的增强 face：用时 / 思考段数 / 终结原因。 */
+    'turn-activity': TurnActivityAugment;
   }
 }
 
-function contextLocation(context: ConversationNodeContext<TurnActivityState>): ConversationLocation {
-  return (
-    context.start?.location ??
-    context.matches[0]?.location ?? { kind: 'unresolved' }
-  );
-}
-
-function buildViewNode(context: ConversationNodeContext<TurnActivityState>): ChatConversationViewNode | null {
-  if (context.state === undefined) return null;
-  const summary = summarizeActivity(context.state);
-  if (summary === null) return null;
-  // The anchor is frozen by the state machine at `turn/end` to the TOP of
-  // the turn (`firstActivitySeq - 0.5`, see activity-state.ts): the fold
-  // control renders right after the user/context rows and before the first
-  // activity row, so toggling never moves the control and the "never
-  // collapse the final answer" exemption is encoded in `finalStep` instead
-  // of any anchor arithmetic.
-  return {
-    key: context.key,
-    kind: TURN_ACTIVITY_KIND,
-    id: context.id,
-    target: 'chat',
-    anchorSeq: summary.anchorSeq,
-    location: contextLocation(context),
-    visibility: 'visible',
-    data: summary,
-  };
-}
-
-export function createTurnActivityDefinition(): ConversationNodeDefinition<TurnActivityState> {
-  return {
+export function createTurnActivityDefinition(): ConversationNodeDefinition<TurnActivityState> {  return {
     kind: TURN_ACTIVITY_KIND,
     target: 'chat',
     match: matchTurnActivity,
@@ -77,34 +43,11 @@ export function createTurnActivityDefinition(): ConversationNodeDefinition<TurnA
       return initialTurnActivityState(match.event.data.turn, match.event.seq, match.event.time);
     },
     update: (context, match) => updateTurnActivityState(context.state, match.event),
-    // Publish on the first event that can yield a summarizable state, plus
-    // tool/retry events that can land AFTER the initial summary was
-    // materialized and so need to re-publish the view node with the
-    // up-to-date tool/retry lists.
-    //
-    // - `turn/end` and `assistant/message` are the regular gates.
-    // - `tool/call` / `tool/result` after `turn/end` arrive as late events
-    //   that bump `toolCallIds`; without immediate re-publication the
-    //   summary's `data-dsh-ta-tools` attribute would be a stale snapshot
-    //   and the projector's tool row would never be hidden.
-    // - `llm/retry` bumps `retryIds` the same way; re-publication keeps
-    //   `data-dsh-ta-retries` fresh so the projector can hide the correlated
-    //   `model-retry` rows. Before `turn/end` the state has no
-    //   `hasFinalMessage` and `buildViewNode` returns null, so early events
-    //   of any of these kinds are no-op publishes.
-    publication: (match) => {
-      switch (match.event.type) {
-        case 'turn/end':
-        case 'assistant/message':
-        case 'tool/call':
-        case 'tool/result':
-        case 'llm/retry':
-          return 'immediate';
-        default:
-          return 'none';
-      }
-    },
-    buildLocationData: (context, scope) => {
+    // reasonKind / durationMs / thinkingSteps 全部在 `turn/end` 定型：
+    // thinking 计数在流式途中虽然增长，但官方折叠条只在轮次封闭后渲染，
+    // 中途发布无人消费。一次发布即定型，无需中途重发布。
+    publication: (match) => (match.event.type === 'turn/end' ? 'immediate' : 'none'),
+    buildLocationData: (context, scope): ConversationLocationData | null => {
       if (scope !== 'turn' || context.state === undefined) return null;
       const summary = summarizeActivity(context.state);
       if (summary === null) return null;
@@ -112,9 +55,12 @@ export function createTurnActivityDefinition(): ConversationNodeDefinition<TurnA
         kind: 'turn',
         turn: context.state.turn,
         key: TURN_ACTIVITY_KIND,
-        value: summary,
+        value: {
+          durationMs: summary.durationMs,
+          thinkingSteps: summary.thinkingSteps,
+          reasonKind: summary.reasonKind,
+        },
       };
     },
-    buildViewNode,
   };
 }

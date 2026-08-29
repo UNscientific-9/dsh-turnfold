@@ -7,7 +7,6 @@ import {
   withPersistedTurn,
   type CollapsePersistence,
 } from '../src/client/persist.ts';
-import { createCollapseStore } from '../src/client/store.ts';
 
 function memoryStorage(): { storage: Storage; snapshot: Map<string, string> } {
   const snapshot = new Map<string, string>();
@@ -62,54 +61,6 @@ test('persistence tolerates unavailable storage (in-memory fallback)', () => {
   // The memory layer keeps the decision for this page even when setItem is
   // impossible — folding must not flip back to undecided on the next read.
   assert.deepEqual(persistence.read(), { s: { '1': 'collapsed' } });
-});
-
-test('store notifies subscribers on change', () => {
-  const { storage } = memoryStorage();
-  const store = createCollapseStore(createStoragePersistence(storage));
-  let notified = 0;
-  const unsubscribe = store.subscribe(() => {
-    notified += 1;
-  });
-  store.setCollapsed('s', 1, 'collapsed');
-  assert.equal(notified, 1);
-  unsubscribe();
-  store.setCollapsed('s', 1, 'expanded');
-  assert.equal(notified, 1);
-});
-
-test('store distinguishes undefined from collapsed', () => {
-  const { storage } = memoryStorage();
-  const store = createCollapseStore(createStoragePersistence(storage));
-  assert.equal(store.getCollapsed('s', 1), undefined);
-  store.setCollapsed('s', 1, 'collapsed');
-  assert.equal(store.getCollapsed('s', 1), 'collapsed');
-});
-
-test('subscriber errors are logged but never break the store', () => {
-  const { storage } = memoryStorage();
-  const store = createCollapseStore(createStoragePersistence(storage));
-  const original = console.error;
-  const errors: unknown[] = [];
-  console.error = (...args: unknown[]) => {
-    errors.push(args);
-  };
-  try {
-    let ok = false;
-    store.subscribe(() => {
-      throw new Error('subscriber boom');
-    });
-    store.subscribe(() => {
-      ok = true;
-    });
-    // Should not throw, and the second subscriber must still run.
-    store.setCollapsed('s', 1, 'collapsed');
-    assert.equal(ok, true);
-    assert.equal(errors.length, 1);
-    assert.match(String(errors[0]?.[0]), /subscriber threw/);
-  } finally {
-    console.error = original;
-  }
 });
 
 test('malformed persisted records are rejected wholesale', () => {

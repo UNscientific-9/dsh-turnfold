@@ -48,12 +48,4 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $node $tsc --emitDeclarationOnly -p (Join-Path $root "tsconfig.json")
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-# ── 浏览器集成 fixture bundle（IIFE，供静态 HTML 页使用）─────────────────
-# 暴露 `window.__dshTurnfold`（projector + store 句柄），Playwright spec
-# 用它们驱动与 React 视图相同的路径。
-& $esbuild (Join-Path $root "src\client\fixture-entry.ts") `
-  --bundle --format=iife --platform=browser --target=es2022 `
-  "--outfile=$(Join-Path $lib 'fixture.js')" --log-level=warning
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-Write-Host "built @UNscientific-9/dsh-turnfold -> lib/client.js, lib/index.js, lib/fixture.js, lib/types"
+Write-Host "built @UNscientific-9/dsh-turnfold -> lib/client.js, lib/index.js, lib/types"

@@ -1,7 +1,7 @@
 {
   "name": "@UNscientific-9/dsh-turnfold",
-  "description": "Codex/ZCode-style turn activity fold for DSH Web: streaming thinking/tools stay visible while the agent works, then fold into a permanent one-line summary above the final answer when the turn completes.",
-  "version": "0.2.8",
+  "description": "Enhancement layer for the built-in DSH 0.1.2 turn-process fold bar: duration + thinking-segment injection, expand-decision persistence, completed-only whitelist, and auto-load-older.",
+  "version": "0.3.0",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -31,7 +31,6 @@
     }
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1",
     "@types/node": "^26.3.0",
     "@types/react": "~18.3.0",
     "esbuild": "^0.25.0",
@@ -47,8 +46,7 @@
   "scripts": {
     "build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --test-isolation=none \"test/*.test.ts\"",
-    "test:browser": "playwright test --config=browser-integration/playwright.config.ts"
+    "test": "node --test --test-isolation=none \"test/*.test.ts\""
   },
   "license": "MIT"
 }

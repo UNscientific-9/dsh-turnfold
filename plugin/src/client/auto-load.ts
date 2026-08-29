@@ -1,32 +1,35 @@
 /**
  * Auto-load-older while the reader rests at the top of the conversation.
  *
- * Borrowed from the community dsh-fold plugin's auto-load design: instead
- * of hunting for the host's top "load older" button, the session's OFFICIAL
- * `loadOlder()` action is invoked through the sessions service scope —
- * `sessions.scope(sessionId).get('conversation').loadOlder()`. The action
- * itself guards `hasMore` / `loadingOlder` / window continuity, so a missed
- * or exhausted call degrades to a no-op.
+ * The session's OFFICIAL `loadOlder()` action is invoked through the
+ * sessions service binding — `sessions.binding(sessionId).session.loadOlder()`
+ * (0.1.2 shape). The action itself guards `openState` / `hasMore` /
+ * `loadingOlder`, so a missed or exhausted call degrades to a no-op. Note the
+ * official behaviour this implies: while older pages are still loading in
+ * (`hasMore`), the official fold bar is disabled (`historyIncomplete`) —
+ * folding resumes once auto-load has caught up.
  *
- * Pacing (borrowed from dsh-tidychat's "smart load"): consecutive pages
- * back off (0 → 400ms → 1s cap) so a very long session cannot hammer the
- * host with back-to-back page pulls; scrolling away from the top resets
- * the pace. The feature defaults ON and can be turned off with
- * `localStorage['dsh.turn-collapse.autoLoad'] = '0'`.
+ * Session identity is supplied by a reader callback installed at plugin
+ * mount (host selection snapshot first, persisted record second) — this
+ * module owns no DOM vocabulary of its own.
  *
- * The payoff with synth.ts: every prepended page lands pre-folded — the
- * reader just scrolls up and history arrives as a clean
- * "fold bar + final answer" stream.
+ * Pacing: consecutive pages back off (0 → 400ms → 1s cap) so a very long
+ * session cannot hammer the host with back-to-back page pulls; scrolling
+ * away from the top resets the pace. The feature defaults ON and can be
+ * turned off with `localStorage['dsh.turn-collapse.autoLoad'] = '0'`.
  */
 
-/** Minimal structural typing over the host sessions service. */
-export interface AutoLoadConversationScope {
-  get(name: string): { loadOlder?: () => Promise<void> } | undefined;
+/** Minimal structural typing over the host sessions service (0.1.2 shape). */
+export interface AutoLoadBinding {
+  session: { loadOlder?: () => Promise<void> };
 }
 
 export interface AutoLoadSessions {
-  scope(sessionId: string): AutoLoadConversationScope | undefined;
+  binding(sessionId: string): AutoLoadBinding | undefined;
 }
+
+/** 会话身份来源（index.ts 装配：宿主 selection 快照 → localStorage 回退）。 */
+export type SessionIdReader = () => string | null;
 
 const SCROLL_HOST_SELECTOR = '[data-conversation-scroll]';
 const TOP_THRESHOLD_PX = 4;
@@ -35,10 +38,16 @@ const PACE_SECOND_PAGE_MS = 400;
 const PACE_CAP_MS = 1000;
 
 let sessions: AutoLoadSessions | undefined;
+let readSessionId: SessionIdReader = () => null;
 
 /** Inject the host sessions service (called once at plugin mount). */
 export function setAutoLoadSessions(service: AutoLoadSessions | undefined): void {
   sessions = service;
+}
+
+/** Install the session-identity reader (called once at plugin mount). */
+export function setAutoLoadSessionReader(reader: SessionIdReader | undefined): void {
+  readSessionId = reader ?? (() => null);
 }
 
 /** Feature switch: default ON, `'0'` disables. An unreadable switch (no
@@ -57,12 +66,13 @@ const inFlight = new Set<string>();
 /** True when the call was dispatched (regardless of whether a page landed). */
 async function fireLoadOlder(sessionId: string): Promise<boolean> {
   if (inFlight.has(sessionId)) return false;
-  const scope = sessions?.scope(sessionId);
-  const conversation = scope?.get('conversation');
-  if (conversation === undefined || typeof conversation.loadOlder !== 'function') return false;
+  const binding = sessions?.binding(sessionId);
+  if (binding === undefined || typeof binding.session.loadOlder !== 'function') return false;
   inFlight.add(sessionId);
   try {
-    await conversation.loadOlder();
+    // Method call — `loadOlder` reads its own guards (`openState`/`hasMore`/
+    // `loadingOlder`) off `this`, so a destructured free call would break.
+    await binding.session.loadOlder();
     return true;
   } catch {
     // A failed older-page pull degrades silently; the manual button remains.
@@ -72,15 +82,6 @@ async function fireLoadOlder(sessionId: string): Promise<boolean> {
   }
 }
 
-/** Read the owning session off the column's summary/synth rows. */
-function pickSessionId(host: HTMLElement): string | null {
-  const column = host.querySelector('[data-chat-flow]');
-  if (column === null) return null;
-  const marker = column.querySelector<HTMLElement>('[data-dsh-ta-session]');
-  const value = marker?.getAttribute('data-dsh-ta-session');
-  return value !== null && value !== undefined && value !== '' ? value : null;
-}
-
 interface Pace {
   pages: number;
   lastAt: number;
@@ -88,21 +89,21 @@ interface Pace {
 
 /**
  * One pass of the check loop (exported for tests): walk every conversation
- * scroller resting at the top and dispatch its session's loadOlder, pacing
- * consecutive pulls. Returns the session ids actually dispatched.
+ * scroller resting at the top and dispatch the current session's loadOlder,
+ * pacing consecutive pulls. Returns the session ids actually dispatched.
  */
 export async function checkAutoLoadOnce(doc: Document, now: number = Date.now()): Promise<string[]> {
   const paces = paceMapFor(doc);
   const storage = typeof localStorage !== 'undefined' ? localStorage : undefined;
   if (!isAutoLoadEnabled(storage)) return [];
+  const sessionId = readSessionId();
+  if (sessionId === null) return [];
   const dispatched: string[] = [];
   for (const host of doc.querySelectorAll<HTMLElement>(SCROLL_HOST_SELECTOR)) {
     if (host.scrollTop > TOP_THRESHOLD_PX) {
       paces.delete(host);
       continue;
     }
-    const sessionId = pickSessionId(host);
-    if (sessionId === null) continue;
     const pace = paces.get(host) ?? { pages: 0, lastAt: 0 };
     const wait = pace.pages === 0 ? 0 : pace.pages === 1 ? PACE_SECOND_PAGE_MS : PACE_CAP_MS;
     if (now - pace.lastAt < wait) continue;

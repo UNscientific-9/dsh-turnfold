@@ -1,37 +1,51 @@
 /** Locale dictionaries owned by this plugin (Chinese is the key-set source of truth). */
 export const NS = 'turnActivity';
 
+export type TurnActivityKey = keyof typeof zh | keyof typeof en;
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    turnActivity: unknown;
+    turnActivity: TurnActivityKey;
   }
 }
 
 /**
- * Stable locale tag emitted by the dictionaries. The React view uses it to
- * pick a duration formatter that matches the rest of the summary text, even
- * when the user's `navigator.language` is set to a different language.
+ * Stable locale tag emitted by the dictionaries. The fold-bar view uses it to
+ * pick a duration formatter that matches the rest of the label, even when the
+ * user's `navigator.language` is set to a different language.
  */
 export type DurationLocaleTag = 'zh' | 'en';
 
+/**
+ * 键集对齐官方折叠条文案的语义（计数段 one/other 二分 + 分隔符 + 全零
+ * 兜底），另加增强段（用时/思考段数）。计数段全走 `{count}` 插值。
+ */
 export const zh = {
   'turnActivity.durationLocale': 'zh',
-  'turnActivity.summary': '本轮用时 {time} · {tools} 次工具 · {thinking} 段思考',
-  'turnActivity.summaryNoTools': '本轮用时 {time} · {thinking} 段思考',
-  'turnActivity.summaryNoThinking': '本轮用时 {time} · {tools} 次工具',
-  'turnActivity.summaryPlain': '本轮用时 {time}',
-  'turnActivity.toggleExpand': '展开本轮执行过程',
-  'turnActivity.toggleCollapse': '收起本轮执行过程',
-  'turnActivity.divider': '本轮执行过程与最终回答的分隔线',
+  'turnActivity.bar.toolCallsOne': '{count} 次工具调用',
+  'turnActivity.bar.toolCallsOther': '{count} 次工具调用',
+  'turnActivity.bar.messagesOne': '{count} 条消息',
+  'turnActivity.bar.messagesOther': '{count} 条消息',
+  'turnActivity.bar.subagentsOne': '{count} 个 subagent',
+  'turnActivity.bar.subagentsOther': '{count} 个 subagent',
+  'turnActivity.bar.thoughtForAWhile': '已思考',
+  'turnActivity.bar.separator': ' · ',
+  'turnActivity.bar.duration': '用时 {time}',
+  'turnActivity.bar.thinkingOne': '{count} 段思考',
+  'turnActivity.bar.thinkingOther': '{count} 段思考',
 } as const satisfies Record<string, string>;
 
 export const en = {
   'turnActivity.durationLocale': 'en',
-  'turnActivity.summary': 'This turn {time} · {tools} tool calls · {thinking} thinking segments',
-  'turnActivity.summaryNoTools': 'This turn {time} · {thinking} thinking segments',
-  'turnActivity.summaryNoThinking': 'This turn {time} · {tools} tool calls',
-  'turnActivity.summaryPlain': 'This turn {time}',
-  'turnActivity.toggleExpand': 'Expand this turn\'s activity',
-  'turnActivity.toggleCollapse': 'Collapse this turn\'s activity',
-  'turnActivity.divider': 'Divider between activity and the final answer',
+  'turnActivity.bar.toolCallsOne': '{count} tool call',
+  'turnActivity.bar.toolCallsOther': '{count} tool calls',
+  'turnActivity.bar.messagesOne': '{count} message',
+  'turnActivity.bar.messagesOther': '{count} messages',
+  'turnActivity.bar.subagentsOne': '{count} subagent',
+  'turnActivity.bar.subagentsOther': '{count} subagents',
+  'turnActivity.bar.thoughtForAWhile': 'Thought for a while',
+  'turnActivity.bar.separator': ' · ',
+  'turnActivity.bar.duration': 'took {time}',
+  'turnActivity.bar.thinkingOne': '{count} thinking segment',
+  'turnActivity.bar.thinkingOther': '{count} thinking segments',
 } as const satisfies Record<string, string>;
