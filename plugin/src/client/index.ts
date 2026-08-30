@@ -36,7 +36,7 @@ export const inject = ['slots', 'locale', 'uiConversation'];
 
 /** Bumped with every shipped change: shows up once in the browser console
  *  so a stale bundle (DSH serves the pnpm-installed copy) is obvious. */
-export const CLIENT_VERSION = '0.3.2';
+export const CLIENT_VERSION = '0.3.3';
 
 export function apply(ctx: Context): void {
   // One-shot load marker: makes "which bundle is the browser running"
