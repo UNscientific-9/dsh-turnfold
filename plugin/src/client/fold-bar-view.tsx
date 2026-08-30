@@ -31,10 +31,14 @@ import {
   animateFoldRows,
   clearPinnedRows,
   collectProcessRows,
+  type CompanionGeometry,
   type FoldAnimationHandle,
   type FoldDirection,
-  type CompanionGeometry,
   type FoldRowPlan,
+  measureGeometry,
+  memberPlans,
+  parsePx,
+  resolveFlowColumn,
 } from './fold-animate.ts';
 import { formatDurationChinese, formatDurationEnglish } from './format.ts';
 import {
@@ -80,29 +84,30 @@ function getPersistence(): CollapsePersistence {
 // 行（compact 形态差来自 React 内容）的几何；把这些目标与成员行纳入同一组
 // WAAPI 过渡，翻转提前到动画尾段（onFlip），突变帧即被动画吸收。
 
-const pxValue = (value: string): number => Number.parseFloat(value) || 0;
-
-function readGeometry(el: HTMLElement, withMarginBottom: boolean): CompanionGeometry {
-  const cs = getComputedStyle(el);
-  return {
-    height: el.offsetHeight,
-    marginTop: pxValue(cs.marginTop),
-    ...(withMarginBottom ? { marginBottom: pxValue(cs.marginBottom) } : {}),
-  };
-}
-
 /** bar 之后与本 turn 关联的第一个非成员 assistant-step 行（官方 answer 行）。 */
 function findAnswerRow(turn: number, bar: HTMLElement): HTMLElement | undefined {
-  const column = bar.closest('[data-chat-flow-key]')?.parentElement;
-  if (column === null || column === undefined) return undefined;
-  const sibs = [...column.children];
-  for (let i = sibs.indexOf(bar) + 1; i < sibs.length; i += 1) {
-    const el = sibs[i] as HTMLElement;
-    if (el.getAttribute('data-chat-turn') !== String(turn)) continue;
+  const column = resolveFlowColumn(bar);
+  if (column === undefined) return undefined;
+  const turnKey = String(turn);
+  for (let el = bar.nextElementSibling; el !== null; el = el.nextElementSibling) {
+    if (!(el instanceof HTMLElement)) continue;
+    if (el.getAttribute('data-chat-turn') !== turnKey) continue;
     if (el.getAttribute('data-chat-flow-kind') === 'assistant-step'
       && !el.hasAttribute('data-turn-process-member')) return el;
   }
   return undefined;
+}
+
+/** 展开动画的伴生起点：点击同步块实测的收起态几何（终值由 layout effect 配对）。 */
+interface CompanionStart {
+  bar: CompanionGeometry;
+  ans?: { el: HTMLElement; geo: CompanionGeometry };
+}
+
+/** collapse flip 落地后的 answer 形态追赶目标（flip 前实测高度）。 */
+interface CatchUpTarget {
+  el: HTMLElement;
+  fromHeight: number;
 }
 
 /**
@@ -116,20 +121,21 @@ function findAnswerRow(turn: number, bar: HTMLElement): HTMLElement | undefined 
 function collapseCompanionPlans(
   turn: number,
   bar: HTMLButtonElement,
-): { plans: FoldRowPlan[]; ans?: { el: HTMLElement; fromHeight: number } } {
+): { plans: FoldRowPlan[]; ans?: CatchUpTarget } {
   const plans: FoldRowPlan[] = [];
   const hadOpen = bar.hasAttribute('data-open');
-  const barFrom = readGeometry(bar, true);
+  const barFrom = measureGeometry(bar, true);
   bar.removeAttribute('data-open');
-  const barTo = readGeometry(bar, true);
+  // 摘 data-open 只影响 margin-bottom 规则：height/marginTop 不变，只补读该值。
+  const barTo = { ...barFrom, marginBottom: parsePx(getComputedStyle(bar).marginBottom) };
   if (hadOpen) bar.setAttribute('data-open', '');
   plans.push({ el: bar, role: 'companion', from: barFrom, to: barTo });
   const ans = findAnswerRow(turn, bar);
-  let ansInfo: { el: HTMLElement; fromHeight: number } | undefined;
+  let ansInfo: CatchUpTarget | undefined;
   if (ans !== undefined) {
-    const ansFrom = readGeometry(ans, false);
+    const ansFrom = measureGeometry(ans, false);
     ans.setAttribute('data-turn-process-answer', '');
-    const compactMargin = pxValue(getComputedStyle(ans).marginTop);
+    const compactMargin = parsePx(getComputedStyle(ans).marginTop);
     ans.removeAttribute('data-turn-process-answer');
     plans.push({
       el: ans,
@@ -143,14 +149,11 @@ function collapseCompanionPlans(
 }
 
 /** 展开动画的伴生起点（点击同步块实测的收起态几何；终值由 layout effect 实测配对）。 */
-function measureCompanionStart(
-  turn: number,
-  bar: HTMLButtonElement,
-): { bar: CompanionGeometry; ans?: { el: HTMLElement; geo: CompanionGeometry } } {
+function measureCompanionStart(turn: number, bar: HTMLButtonElement): CompanionStart {
   const ans = findAnswerRow(turn, bar);
   return {
-    bar: readGeometry(bar, true),
-    ans: ans === undefined ? undefined : { el: ans, geo: readGeometry(ans, false) },
+    bar: measureGeometry(bar, true),
+    ans: ans === undefined ? undefined : { el: ans, geo: measureGeometry(ans, false) },
   };
 }
 
@@ -158,14 +161,14 @@ function measureCompanionStart(
 function expandCompanionPlans(
   turn: number,
   bar: HTMLButtonElement,
-  start: { bar: CompanionGeometry; ans?: { el: HTMLElement; geo: CompanionGeometry } },
+  start: CompanionStart,
 ): FoldRowPlan[] {
   const plans: FoldRowPlan[] = [
-    { el: bar, role: 'companion', from: start.bar, to: readGeometry(bar, true) },
+    { el: bar, role: 'companion', from: start.bar, to: measureGeometry(bar, true) },
   ];
   const ans = findAnswerRow(turn, bar);
   if (ans !== undefined && start.ans !== undefined && start.ans.el === ans) {
-    plans.push({ el: ans, role: 'companion', from: start.ans.geo, to: readGeometry(ans, false) });
+    plans.push({ el: ans, role: 'companion', from: start.ans.geo, to: measureGeometry(ans, false) });
   }
   return plans;
 }
@@ -198,11 +201,9 @@ export const FoldBarView = memo(function FoldBarView({
   const animationRef = useRef<FoldAnimationHandle | undefined>(undefined);
   // 展开意图在 toggle 同步块实测的伴生起点（官方提交前），layout effect
   // 消费后与官方终值配对成伴生动画。
-  const companionStartRef = useRef<
-    ReturnType<typeof measureCompanionStart> | undefined
-  >(undefined);
+  const companionStartRef = useRef<CompanionStart | undefined>(undefined);
   // collapse flip 落地后的 answer 形态追赶目标（flip 前实测高度）。
-  const catchUpRef = useRef<{ el: HTMLElement; fromHeight: number } | undefined>(undefined);
+  const catchUpRef = useRef<CatchUpTarget | undefined>(undefined);
 
   /** 程序性展开（置位 skipAnim + setOpen 必须成对，收敛于此防止漏抄）。 */
   const openSilently = (): void => {
@@ -231,6 +232,10 @@ export const FoldBarView = memo(function FoldBarView({
       catchUpRef.current = undefined;
       const bar = barRef.current;
       if (bar === null) return;
+      // RO 追赶的收尾句柄：compact 形态滞后落地（实测 ~80ms，800ms 为 10 倍
+      // 余量上限）；open 翻回/卸载时由 cleanup 撤除，防残留 RO 多余追赶。
+      let disconnectTimer: ReturnType<typeof setTimeout> | undefined;
+      let ro: ResizeObserver | undefined;
       if (catchUp !== undefined && catchUp.el.isConnected) {
         // 慢路径兜底会在 answer 行留下主动画的 height 终态内联（官方提交
         // 后已失真）；追赶 WAAPI 此刻正从上方覆盖，清内联无视觉差。
@@ -242,16 +247,20 @@ export const FoldBarView = memo(function FoldBarView({
         // 追赶会因差值 <1 空转）。ResizeObserver 在变化帧的渲染步骤
         // （paint 前）回调，此刻启动追赶 WAAPI 可从 flip 前实测值平滑覆盖，
         // 不露出突变帧。
-        const ro = new ResizeObserver(() => {
+        ro = new ResizeObserver(() => {
           if (Math.abs(el.offsetHeight - fromHeight) < 1) return;
-          ro.disconnect();
+          ro?.disconnect();
           animateCompanionCatchUp(el, fromHeight);
         });
         ro.observe(el);
-        setTimeout(() => ro.disconnect(), 800);
+        disconnectTimer = setTimeout(() => ro?.disconnect(), 800);
       }
       const timer = setTimeout(() => clearPinnedRows(turn, bar), 0);
-      return () => clearTimeout(timer);
+      return () => {
+        clearTimeout(timer);
+        if (disconnectTimer !== undefined) clearTimeout(disconnectTimer);
+        ro?.disconnect();
+      };
     }
     if (skipAnimRef.current) {
       skipAnimRef.current = false;
@@ -269,7 +278,7 @@ export const FoldBarView = memo(function FoldBarView({
     const start = companionStartRef.current;
     companionStartRef.current = undefined;
     if (rows.length === 0) return;
-    const plans: FoldRowPlan[] = rows.map((el) => ({ el, role: 'member' as const }));
+    const plans: FoldRowPlan[] = memberPlans(rows);
     if (start !== undefined) plans.push(...expandCompanionPlans(turn, bar, start));
     const handle = animateFoldRows(plans, 'expand', () => {
       animationRef.current = undefined;
@@ -337,11 +346,10 @@ export const FoldBarView = memo(function FoldBarView({
       const bar = barRef.current;
       const rows = bar === null ? [] : collectProcessRows(turn, bar);
       if (bar !== null && rows.length > 0) {
-        const memberPlans: FoldRowPlan[] = rows.map((el) => ({ el, role: 'member' as const }));
         const { plans: companionPlans, ans } = collapseCompanionPlans(turn, bar);
         catchUpRef.current = ans;
         const handle = animateFoldRows(
-          [...memberPlans, ...companionPlans],
+          [...memberPlans(rows), ...companionPlans],
           'collapse',
           () => {
             animationRef.current = undefined;

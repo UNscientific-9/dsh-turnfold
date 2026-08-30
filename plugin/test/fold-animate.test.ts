@@ -3,9 +3,14 @@ import { test } from 'node:test';
 import {
   animateCompanionCatchUp,
   animateFoldRows,
+  memberPlans,
   processRowsSelector,
   type FoldAnimateDeps,
+  type FoldRowPlan,
 } from '../src/client/fold-animate.ts';
+
+/** FakeRow 解包后复用引擎的 memberPlans 装配（样板收敛点）。 */
+const plansOf = (rows: readonly FakeRow[]): FoldRowPlan[] => memberPlans(rows.map((row) => row.el));
 
 interface FakeAnim {
   frames: Keyframe[];
@@ -27,9 +32,11 @@ interface FakeRow {
   anims: FakeAnim[];
   /** false 模拟行内容未物化（offsetHeight 为 0），物化后恢复自然高。 */
   materialized: boolean;
+  /** 官方 hidden 是否已挂（settle 分流判据）；flip 用例在 onFlip 里置位。 */
+  hidden: boolean;
 }
 
-function makeRow(height: number, marginTop: number, materialized = true): FakeRow {
+function makeRow(height: number, marginTop: number, materialized = true, hidden = false): FakeRow {
   const style: Record<string, string> = {};
   const classes = new Set<string>();
   const anims: FakeAnim[] = [];
@@ -41,9 +48,10 @@ function makeRow(height: number, marginTop: number, materialized = true): FakeRo
     },
     offsetHeight: height,
     // settle 的「已 hidden 直接清样式」分流检查；默认未 hidden（走钉住路径）。
-    hasAttribute: () => false,
+    hasAttribute: (name: string) => name === 'hidden' && row.hidden,
   } as unknown as HTMLElement;
-  return { el, style, classes, height, marginTop, anims, materialized };
+  const row: FakeRow = { el, style, classes, height, marginTop, anims, materialized, hidden };
+  return row;
 }
 
 /** 假动画：记录 frames/options，finish() 手动 resolve、reject() 模拟外部取消。 */
@@ -149,7 +157,7 @@ test('collapse animates from natural height to zero with fade-out, then pins ter
   const rows = [makeRow(120, 16), makeRow(80, 16)];
   const { deps } = makeDeps(rows);
   const done: string[] = [];
-  animateFoldRows(rows.map((row) => ({ el: row.el, role: 'member' as const })), 'collapse', () => done.push('done'), {}, deps);
+  animateFoldRows(plansOf(rows), 'collapse', () => done.push('done'), {}, deps);
   await settleAnimation();
 
   // 收起方向行本就可见：首帧测量即就绪 → WAAPI 从自然高 → 0，淡出。
@@ -190,7 +198,7 @@ test('collapse keeps terminal geometry underneath staggered row animations', asy
   const rows = [makeRow(120, 16), makeRow(80, 16)];
   const { deps } = makeDeps(rows);
   const done: string[] = [];
-  animateFoldRows(rows.map((row) => ({ el: row.el, role: 'member' as const })), 'collapse', () => done.push('done'), {}, deps);
+  animateFoldRows(plansOf(rows), 'collapse', () => done.push('done'), {}, deps);
   await settleAnimation();
 
   assert.equal(rows[0].style.height, '0px', 'underlying height is the collapsed terminal value');
@@ -207,7 +215,7 @@ test('pinned terminal state is overwritten by a following expand animation', asy
   const rows = [makeRow(120, 16)];
   const { deps, flushTimeout, flushMicrotask } = makeDeps(rows);
   // 先收起并 settle（钉住终态）。
-  animateFoldRows(rows.map((row) => ({ el: row.el, role: 'member' as const })), 'collapse', () => {}, {}, deps);
+  animateFoldRows(plansOf(rows), 'collapse', () => {}, {}, deps);
   await settleAnimation();
   rows[0].anims[0].finish();
   await settleAnimation();
@@ -216,7 +224,7 @@ test('pinned terminal state is overwritten by a following expand animation', asy
   // 再展开：钉住约束下首测得 0 → 走解除约束测量，必须测得自然高而非把 0
   // 当目标；展开动画覆写钉住的行内样式。
   const done: string[] = [];
-  animateFoldRows(rows.map((row) => ({ el: row.el, role: 'member' as const })), 'expand', () => done.push('done'), {}, deps);
+  animateFoldRows(plansOf(rows), 'expand', () => done.push('done'), {}, deps);
   flushMicrotask(); // 首测失败（钉住约束）→ 预压
   flushTimeout(); // 轮询：临时解除约束测量 → 成功
   await settleAnimation();
@@ -235,7 +243,7 @@ test('cancel after settle is a no-op: pin cleanup belongs to clearPinnedRows', a
   const rows = [makeRow(90, 16)];
   const { deps } = makeDeps(rows);
   const done: string[] = [];
-  const handle = animateFoldRows(rows.map((row) => ({ el: row.el, role: 'member' as const })), 'collapse', () => done.push('done'), {}, deps);
+  const handle = animateFoldRows(plansOf(rows), 'collapse', () => done.push('done'), {}, deps);
   await settleAnimation();
   rows[0].anims[0].finish();
   await settleAnimation();
@@ -249,7 +257,7 @@ test('expand measures in a microtask (before paint) and skips timeout polling', 
   const rows = [makeRow(120, 16)];
   const { deps, flushMicrotask, pendingTimeouts } = makeDeps(rows);
   const done: string[] = [];
-  animateFoldRows(rows.map((row) => ({ el: row.el, role: 'member' as const })), 'expand', () => done.push('done'), {}, deps);
+  animateFoldRows(plansOf(rows), 'expand', () => done.push('done'), {}, deps);
   flushMicrotask(); // 微任务首测（真实环境中发生在 paint 前）
   assert.equal(pendingTimeouts(), 0, 'no timeout polling was scheduled on first-measure success');
   await settleAnimation();
@@ -272,7 +280,7 @@ test('expand keeps natural geometry underneath staggered row animations', async 
   const rows = [makeRow(120, 16), makeRow(80, 16)];
   const { deps, flushMicrotask } = makeDeps(rows);
   const done: string[] = [];
-  animateFoldRows(rows.map((row) => ({ el: row.el, role: 'member' as const })), 'expand', () => done.push('done'), {}, deps);
+  animateFoldRows(plansOf(rows), 'expand', () => done.push('done'), {}, deps);
   flushMicrotask();
   await settleAnimation();
 
@@ -290,7 +298,7 @@ test('expand presets zero on first miss, then animates once content materializes
   const rows = [makeRow(120, 16, false)]; // 内容未物化，首测只能得 0
   const { deps, flushTimeout, flushMicrotask } = makeDeps(rows);
   const done: string[] = [];
-  animateFoldRows(rows.map((row) => ({ el: row.el, role: 'member' as const })), 'expand', () => done.push('done'), {}, deps);
+  animateFoldRows(plansOf(rows), 'expand', () => done.push('done'), {}, deps);
   flushMicrotask();
 
   // 首测失败 → 立即预压 0 隐身（阻止后续帧以完整形态闪现）。
@@ -321,7 +329,7 @@ test('expand gives up (styles cleared) when height never becomes measurable', as
   const rows = [makeRow(0, 0, false)];
   const { deps, flushTimeout, flushMicrotask } = makeDeps(rows);
   const done: string[] = [];
-  const handle = animateFoldRows(rows.map((row) => ({ el: row.el, role: 'member' as const })), 'expand', () => done.push('done'), {}, deps);
+  const handle = animateFoldRows(plansOf(rows), 'expand', () => done.push('done'), {}, deps);
   // 微任务首测失败（预压）→ 2 次轮询仍测不到 → resolve([]) → settle 放弃。
   flushMicrotask();
   flushTimeout();
@@ -340,7 +348,7 @@ test('all rows settling via animation finish triggers done once', async () => {
   const rows = [makeRow(40, 8), makeRow(60, 8)];
   const { deps, flushMicrotask } = makeDeps(rows);
   const done: string[] = [];
-  animateFoldRows(rows.map((row) => ({ el: row.el, role: 'member' as const })), 'expand', () => done.push('done'), {}, deps);
+  animateFoldRows(plansOf(rows), 'expand', () => done.push('done'), {}, deps);
   flushMicrotask();
   await settleAnimation();
   for (const row of rows) row.anims[0].finish();
@@ -354,7 +362,7 @@ test('reverse switches direction and swaps the completion callback', async () =>
   const { deps } = makeDeps(rows);
   const done: string[] = [];
   const handle = animateFoldRows(
-    rows.map((row) => ({ el: row.el, role: 'member' as const })),
+    plansOf(rows),
     'collapse',
     () => done.push('collapse'),
     {},
@@ -378,7 +386,7 @@ test('reverse during measurement restarts with the new direction', async () => {
   const { deps, flushMicrotask } = makeDeps(rows);
   const done: string[] = [];
   const handle = animateFoldRows(
-    rows.map((row) => ({ el: row.el, role: 'member' as const })),
+    plansOf(rows),
     'expand',
     () => done.push('expand'),
     {},
@@ -401,7 +409,7 @@ test('reverse during preset zero clears the constraint and collapses', async () 
   const { deps, flushTimeout, flushMicrotask } = makeDeps(rows);
   const done: string[] = [];
   const handle = animateFoldRows(
-    rows.map((row) => ({ el: row.el, role: 'member' as const })),
+    plansOf(rows),
     'expand',
     () => done.push('expand'),
     {},
@@ -431,7 +439,7 @@ test('empty row list and reduced motion settle immediately without touching styl
   animateFoldRows([], 'expand', () => done.push('empty'), {}, makeDeps([untouched]).deps);
   const reduced = [makeRow(50, 10)];
   animateFoldRows(
-    reduced.map((row) => ({ el: row.el, role: 'member' as const })),
+    plansOf(reduced),
     'collapse',
     () => done.push('reduced'),
     {},
@@ -445,7 +453,7 @@ test('empty row list and reduced motion settle immediately without touching styl
 test('handle active state distinguishes a live animation from synchronous fallback', async () => {
   const rows = [makeRow(50, 10)];
   const { deps } = makeDeps(rows);
-  const handle = animateFoldRows(rows.map((row) => ({ el: row.el, role: 'member' as const })), 'collapse', () => {}, {}, deps);
+  const handle = animateFoldRows(plansOf(rows), 'collapse', () => {}, {}, deps);
   await settleAnimation();
   assert.equal(handle.active, true, 'started animation is active');
   handle.cancel();
@@ -459,7 +467,7 @@ test('cancel cleans up without firing the completion callback', async () => {
   const rows = [makeRow(90, 16)];
   const { deps } = makeDeps(rows);
   const done: string[] = [];
-  const handle = animateFoldRows(rows.map((row) => ({ el: row.el, role: 'member' as const })), 'collapse', () => done.push('done'), {}, deps);
+  const handle = animateFoldRows(plansOf(rows), 'collapse', () => done.push('done'), {}, deps);
   await settleAnimation();
   handle.cancel();
   assert.equal(rows[0].anims[0].cancelled, true, 'animation cancelled');
@@ -474,7 +482,7 @@ test('cancel during measurement ignores the later microtask and polls', async ()
   const rows = [makeRow(120, 16, false)];
   const { deps, flushTimeout, flushMicrotask } = makeDeps(rows);
   const done: string[] = [];
-  const handle = animateFoldRows(rows.map((row) => ({ el: row.el, role: 'member' as const })), 'expand', () => done.push('done'), {}, deps);
+  const handle = animateFoldRows(plansOf(rows), 'expand', () => done.push('done'), {}, deps);
   handle.cancel();
   flushMicrotask(); // 取消后排队的首测回调：isStale（finished）必须拦下
   flushTimeout();
@@ -493,7 +501,7 @@ test('reverse reports false when it settles synchronously, true while still acti
   const rows = [makeRow(100, 12, false)];
   const { deps, flushMicrotask } = makeDeps(rows);
   const done: string[] = [];
-  const handle = animateFoldRows(rows.map((row) => ({ el: row.el, role: 'member' as const })), 'expand', () => done.push('expand'), {}, deps);
+  const handle = animateFoldRows(plansOf(rows), 'expand', () => done.push('expand'), {}, deps);
   flushMicrotask(); // 首测失败 → 预压
   const active = handle.reverse(() => done.push('collapse'));
   assert.equal(active, false, 'reverse that settles synchronously reports inactive');
@@ -504,7 +512,7 @@ test('reverse reports false when it settles synchronously, true while still acti
   // 活跃反转：collapse 动画中 reverse 到 expand，动画继续 → true。
   const rows2 = [makeRow(100, 12)];
   const { deps: deps2 } = makeDeps(rows2);
-  const handle2 = animateFoldRows(rows2.map((row) => ({ el: row.el, role: 'member' as const })), 'collapse', () => {}, {}, deps2);
+  const handle2 = animateFoldRows(plansOf(rows2), 'collapse', () => {}, {}, deps2);
   await settleAnimation();
   const active2 = handle2.reverse(() => {});
   assert.equal(active2, true, 'animating reverse stays active');
@@ -517,7 +525,7 @@ test('externally cancelled animation (finished rejects) settles immediately', as
   const rows = [makeRow(100, 12)];
   const { deps, flushMicrotask } = makeDeps(rows);
   const done: string[] = [];
-  animateFoldRows(rows.map((row) => ({ el: row.el, role: 'member' as const })), 'expand', () => done.push('done'), {}, deps);
+  animateFoldRows(plansOf(rows), 'expand', () => done.push('done'), {}, deps);
   flushMicrotask();
   await settleAnimation();
   const anim = rows[0].anims[0];
@@ -531,12 +539,9 @@ test('externally cancelled animation (finished rejects) settles immediately', as
 test('collapse companions animate their own geometry and hidden settle clears all styles', async () => {
   // flip 落地后的正常收起路径：settle 时成员行已 hidden——直接清全部样式
   // （含伴生行），不再走钉住兜底。
-  const member = makeRow(120, 16);
-  const bar = makeRow(33, 0);
-  const answer = makeRow(800, 16);
-  for (const row of [member, bar, answer]) {
-    (row.el as unknown as { hasAttribute: (n: string) => boolean }).hasAttribute = (n) => n === 'hidden';
-  }
+  const member = makeRow(120, 16, true, true);
+  const bar = makeRow(33, 0, true, true);
+  const answer = makeRow(800, 16, true, true);
   const { deps } = makeDeps([member, bar, answer]);
   const done: string[] = [];
   const handle = animateFoldRows([
@@ -600,7 +605,11 @@ test('collapse arms onFlip near the animation end and never fires it twice', asy
   const { deps, flushTimeout, pendingTimeouts } = makeDeps(rows);
   const flips: number[] = [];
   const done: string[] = [];
-  animateFoldRows(rows.map((row) => ({ el: row.el, role: 'member' as const })), 'collapse', () => done.push('done'), { onFlip: () => flips.push(1) }, deps);
+  // flip 即官方提交点：回调里挂 hidden（生产常态），settle 走清理路径。
+  animateFoldRows(plansOf(rows), 'collapse', () => done.push('done'), { onFlip: () => {
+    flips.push(1);
+    for (const row of rows) row.hidden = true;
+  } }, deps);
   await settleAnimation();
   assert.ok(pendingTimeouts() >= 1, 'flip timer armed');
   flushTimeout(); // 队首是 flip 定时器（先于 720ms 兜底入队）
@@ -616,7 +625,11 @@ test('settle fires onFlip as a fallback when the flip timer never ran', async ()
   const { deps } = makeDeps(rows);
   const flips: number[] = [];
   const done: string[] = [];
-  animateFoldRows(rows.map((row) => ({ el: row.el, role: 'member' as const })), 'collapse', () => done.push('done'), { onFlip: () => flips.push(1) }, deps);
+  // settle 兜底补发的 flip 同样是官方提交点：置 hidden 后 settle 走清理路径。
+  animateFoldRows(plansOf(rows), 'collapse', () => done.push('done'), { onFlip: () => {
+    flips.push(1);
+    for (const row of rows) row.hidden = true;
+  } }, deps);
   await settleAnimation();
   rows[0].anims[0].finish();
   await settleAnimation();
@@ -628,7 +641,7 @@ test('cancel clears the armed flip without firing it', async () => {
   const rows = [makeRow(100, 12)];
   const { deps, flushTimeout } = makeDeps(rows);
   const flips: number[] = [];
-  const handle = animateFoldRows(rows.map((row) => ({ el: row.el, role: 'member' as const })), 'collapse', () => {}, { onFlip: () => flips.push(1) }, deps);
+  const handle = animateFoldRows(plansOf(rows), 'collapse', () => {}, { onFlip: () => flips.push(1) }, deps);
   await settleAnimation();
   handle.cancel();
   flushTimeout();
@@ -638,7 +651,7 @@ test('cancel clears the armed flip without firing it', async () => {
 test('reverse from expand to collapse re-arms a flip timer', async () => {
   const rows = [makeRow(100, 12)];
   const { deps, flushMicrotask, pendingTimeouts } = makeDeps(rows);
-  const handle = animateFoldRows(rows.map((row) => ({ el: row.el, role: 'member' as const })), 'expand', () => {}, { onFlip: () => {} }, deps);
+  const handle = animateFoldRows(plansOf(rows), 'expand', () => {}, { onFlip: () => {} }, deps);
   flushMicrotask();
   await settleAnimation();
   assert.equal(pendingTimeouts(), 1, 'only the settle fallback timer before reverse');

@@ -83,7 +83,7 @@ turn-activity definition（本插件）── 每轮状态机 ── turn/end �
 ```bash
 npm install --ignore-scripts    # 构建依赖（typescript/esbuild）
 npm run typecheck               # tsc --noEmit
-npm test                        # node --test（36 个用例）
+npm test                        # node --test（52 个用例）
 npm run build                   # 产物 → lib/
 npm pack                        # 打包 → dsh-turnfold-<version>.tgz
 ```

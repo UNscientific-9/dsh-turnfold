@@ -47,14 +47,17 @@ export function processRowsSelector(turn: number): string {
   return `[data-chat-turn="${turn}"][data-turn-process-member]:not([data-turn-process-hidden])`;
 }
 
+/** 官方 flow 列容器（折叠条与成员行的共同父列，拓扑契约见 architecture.md）。 */
+export function resolveFlowColumn(barRoot: HTMLElement): HTMLElement | undefined {
+  return barRoot.closest('[data-chat-flow-key]')?.parentElement ?? undefined;
+}
+
 /**
- * 收集本 turn 当前可见的成员行。`barRoot` 是折叠条 button 本身——它和成
- * 员行互为兄弟，都在同一个 flow 列容器下，从最近的 flowItem wrapper 上
- * 取 parentElement 即该容器。
+ * 收集本 turn 当前可见的成员行。
  */
 export function collectProcessRows(turn: number, barRoot: HTMLElement): HTMLElement[] {
-  const column = barRoot.closest('[data-chat-flow-key]')?.parentElement;
-  if (column === null || column === undefined) return [];
+  const column = resolveFlowColumn(barRoot);
+  if (column === undefined) return [];
   return [...column.querySelectorAll<HTMLElement>(processRowsSelector(turn))];
 }
 
@@ -69,8 +72,8 @@ export function allProcessRowsSelector(turn: number): string {
  * 图调用；不筛选 hidden——钉住窗口期行尚未挂 hidden，必须能命中。
  */
 export function clearPinnedRows(turn: number, barRoot: HTMLElement): void {
-  const column = barRoot.closest('[data-chat-flow-key]')?.parentElement;
-  if (column === null || column === undefined) return;
+  const column = resolveFlowColumn(barRoot);
+  if (column === undefined) return;
   for (const el of column.querySelectorAll<HTMLElement>(allProcessRowsSelector(turn))) {
     clearRowInline(el);
   }
@@ -101,16 +104,19 @@ export interface CompanionGeometry extends RowMeasure {
   readonly marginBottom?: number;
 }
 
-/**
- * 一条动画目标。member 行的 from/to 由测量阶段推导（expand 0→自然高、
- * collapse 自然高→0），传入时省略；companion 行由视图在启动前实测
- * from/to——实测而非硬编码，官方值变化时自动跟随。
- */
-export interface FoldRowPlan {
-  readonly el: HTMLElement;
-  readonly role: 'member' | 'companion';
-  readonly from?: CompanionGeometry;
-  readonly to?: CompanionGeometry;
+/** 一条动画目标：member 的 from/to 由测量阶段推导（省略）；companion 由视图实测必带。 */
+export type FoldRowPlan =
+  | { readonly el: HTMLElement; readonly role: 'member' }
+  | {
+      readonly el: HTMLElement;
+      readonly role: 'companion';
+      readonly from: CompanionGeometry;
+      readonly to: CompanionGeometry;
+    };
+
+/** 把成员行元素装配成 member plan（视图与测试共用的样板收敛）。 */
+export function memberPlans(rows: readonly HTMLElement[]): FoldRowPlan[] {
+  return rows.map((el): FoldRowPlan => ({ el, role: 'member' }));
 }
 
 export interface FoldAnimateDeps {
@@ -147,7 +153,7 @@ function measureWhenReady(
   deps: FoldAnimateDeps,
   presetZero: () => void,
   isStale: () => boolean,
-): Promise<RowMeasure[]> | undefined {
+): Promise<ReadonlyMap<HTMLElement, RowMeasure>> | undefined {
   const natural = new Map<HTMLElement, RowMeasure>();
   let preset = false;
   // 预压态下直接测 offsetHeight/computed marginTop 只会得 0：临时解除
@@ -180,7 +186,7 @@ function measureWhenReady(
     return true;
   };
   if (direction === 'collapse') {
-    return ready() ? Promise.resolve([...natural.values()]) : undefined;
+    return ready() ? Promise.resolve(natural) : undefined;
   }
   return new Promise((resolve) => {
     let attempts = 0;
@@ -188,13 +194,13 @@ function measureWhenReady(
       if (isStale()) return;
       attempts += 1;
       if (ready()) {
-        resolve([...natural.values()]);
+        resolve(natural);
         return;
       }
       // 微任务首测后至多重试 2 次（总测量机会 3 次，约 ~50ms）。仍测不到
       // 就放弃动画（回退官方瞬间切换），绝不把 0 当目标。
       if (attempts >= 3) {
-        resolve([]);
+        resolve(new Map());
         return;
       }
       deps.scheduleTimeout(poll, 16);
@@ -203,7 +209,7 @@ function measureWhenReady(
       if (isStale()) return;
       attempts += 1;
       if (ready()) {
-        resolve([...natural.values()]);
+        resolve(natural);
         return;
       }
       // 首测失败（行内容未物化）：立即预压 0 阻止后续帧闪现，再轮询。
@@ -214,16 +220,27 @@ function measureWhenReady(
   });
 }
 
-const parsePx = (value: string): number => Number.parseFloat(value) || 0;
+/** CSS 像素值解析（'8px' → 8，异常/空串得 0）。 */
+export const parsePx = (value: string): number => Number.parseFloat(value) || 0;
+
+/**
+ * 浏览器几何测量（border-box 高 + computed margin）；成员行与伴生行共用
+ * 这一个口径——口径分叉是抽动的另一种成因。
+ */
+export function measureGeometry(el: HTMLElement, withMarginBottom = false): CompanionGeometry {
+  const cs = getComputedStyle(el);
+  return {
+    height: el.offsetHeight,
+    marginTop: parsePx(cs.marginTop),
+    ...(withMarginBottom ? { marginBottom: parsePx(cs.marginBottom) } : {}),
+  };
+}
 
 const browserDeps: FoldAnimateDeps = {
   scheduleMicrotask: (cb) => queueMicrotask(cb),
   scheduleTimeout: (cb, ms) => setTimeout(cb, ms),
   cancelTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
-  measure: (el) => ({
-    height: el.offsetHeight,
-    marginTop: parsePx(getComputedStyle(el).marginTop),
-  }),
+  measure: (el) => measureGeometry(el),
   reducedMotion: () =>
     typeof matchMedia !== 'undefined'
     && matchMedia('(prefers-reduced-motion: reduce)').matches,
@@ -264,6 +281,13 @@ const FLIP_LEAD_MS = 70;
 /** flip 落地后 answer 形态差的追赶动画时长。 */
 const CATCH_UP_MS = 140;
 
+/** 共享 WAAPI 时序；fill:both 临时覆盖终值，整组 settle 时同步 cancel 不残留。 */
+const foldTiming = (duration: number): KeyframeAnimationOptions => ({
+  duration,
+  easing: 'cubic-bezier(0.2, 0, 0, 1)',
+  fill: 'both',
+});
+
 export interface FoldAnimateOptions {
   /**
    * collapse 专用：主动画剩 `FLIP_LEAD_MS` 时触发一次（视图借此把
@@ -288,12 +312,12 @@ export function animateFoldRows(
   options: FoldAnimateOptions = {},
   deps: FoldAnimateDeps = browserDeps,
 ): FoldAnimationHandle {
-  const members = plans.filter((plan) => plan.role === 'member');
+  const memberRows = plans
+    .filter((plan): plan is Extract<FoldRowPlan, { role: 'member' }> => plan.role === 'member')
+    .map((plan) => plan.el);
   const companions = plans.filter(
-    (plan): plan is FoldRowPlan & { from: CompanionGeometry; to: CompanionGeometry } =>
-      plan.role === 'companion' && plan.from !== undefined && plan.to !== undefined,
+    (plan): plan is Extract<FoldRowPlan, { role: 'companion' }> => plan.role === 'companion',
   );
-  const memberRows = members.map((plan) => plan.el);
   if (memberRows.length === 0 || deps.reducedMotion()) {
     onDone();
     return {
@@ -313,34 +337,27 @@ export function animateFoldRows(
   let flipTimer: unknown;
   let flipFired = false;
   let animationGeneration = 0;
-  let phase: 'measuring' | 'animating' = 'measuring';
-  let currentMeasures: RowMeasure[] | undefined;
+  // undefined = measuring（等自然高就绪），赋值后 = animating（过渡中）。
+  let currentMeasures: ReadonlyMap<HTMLElement, RowMeasure> | undefined;
   let measureGeneration = 0;
 
-  const clearMemberStyles = (el: HTMLElement): void => {
-    clearRowInline(el);
+  const clearAllStyles = (): void => {
+    for (const el of memberRows) clearRowInline(el);
+    for (const plan of companions) clearRowInline(plan.el);
   };
 
-  const clearAllStyles = (): void => {
-    for (const el of memberRows) clearMemberStyles(el);
-    for (const plan of companions) {
-      plan.el.classList.remove('dsh-tf-animating');
-      plan.el.style.height = '';
-      plan.el.style.marginTop = '';
-      plan.el.style.marginBottom = '';
-      plan.el.style.overflow = '';
-    }
+  /** 收起的 0 高隐身态：预压与终态钉住共用同一写入（防闪现）。 */
+  const writeCollapseTerminal = (el: HTMLElement): void => {
+    el.classList.add('dsh-tf-animating');
+    el.style.overflow = 'hidden';
+    el.style.height = '0px';
+    el.style.marginTop = '0px';
+    el.style.opacity = '0';
   };
 
   /** 展开首测失败的预压：与展开动画起点一致的 0 高隐身态（防闪现）。 */
   const presetZero = (): void => {
-    for (const el of memberRows) {
-      el.classList.add('dsh-tf-animating');
-      el.style.overflow = 'hidden';
-      el.style.height = '0px';
-      el.style.marginTop = '0px';
-      el.style.opacity = '0';
-    }
+    for (const el of memberRows) writeCollapseTerminal(el);
   };
 
   const cancelFallback = (): void => {
@@ -353,6 +370,12 @@ export function animateFoldRows(
     if (flipTimer === undefined) return;
     deps.cancelTimeout(flipTimer);
     flipTimer = undefined;
+  };
+
+  /** settle/cancel/reverse 共用的失效序列：撤兜底 timeout 与 flip 定时器。 */
+  const invalidate = (): void => {
+    cancelFallback();
+    cancelFlipTimer();
   };
 
   const fireFlip = (): void => {
@@ -395,17 +418,14 @@ export function animateFoldRows(
       if (geometry.marginBottom !== undefined) el.style.marginBottom = `${geometry.marginBottom}px`;
       return;
     }
-    const index = memberRows.indexOf(el);
-    const measure = index < 0 ? undefined : currentMeasures?.[index];
+    const measure = currentMeasures?.get(el);
     if (measure === undefined) return;
-    el.classList.add('dsh-tf-animating');
-    el.style.overflow = 'hidden';
     if (target === 'collapse') {
-      el.style.height = '0px';
-      el.style.marginTop = '0px';
-      el.style.opacity = '0';
+      writeCollapseTerminal(el);
       return;
     }
+    el.classList.add('dsh-tf-animating');
+    el.style.overflow = 'hidden';
     el.style.height = `${measure.height}px`;
     el.style.marginTop = `${measure.marginTop}px`;
     el.style.opacity = '1';
@@ -427,8 +447,7 @@ export function animateFoldRows(
     finished = true;
     measureGeneration += 1;
     animationGeneration += 1;
-    cancelFallback();
-    cancelFlipTimer();
+    invalidate();
     // 先把底层同步落到终态，再 cancel 临时 fill effect；两步处于同一同步块，
     // 浏览器没有机会画出动画起点或中间值。
     applyTerminalStyles(direction_);
@@ -467,30 +486,22 @@ export function animateFoldRows(
         () => completeTarget(el),
       );
     }
-    cancelFallback();
     timeout = deps.scheduleTimeout(() => {
       if (!finished && myGeneration === animationGeneration) settle();
     }, DURATION_MS + 500);
   };
 
-  const runAnimation = (measures: RowMeasure[]): void => {
+  const runAnimation = (measures: ReadonlyMap<HTMLElement, RowMeasure>): void => {
     currentMeasures = measures;
-    phase = 'animating';
+    const expand = direction_ === 'expand';
     applyTerminalStyles(direction_);
-    const animationOptions: KeyframeAnimationOptions = {
-      duration: DURATION_MS,
-      easing: 'cubic-bezier(0.2, 0, 0, 1)',
-      // 临时 fill 覆盖 pending/错帧完成；整组 settle 时同步 cancel，不会
-      // 留下长期 filling animation 或压住后续指定样式。
-      fill: 'both',
-    };
+    const animationOptions = foldTiming(DURATION_MS);
     const startAnimation = (
       el: HTMLElement,
       from: CompanionGeometry,
       to: CompanionGeometry,
       withOpacity: boolean,
     ): void => {
-      const expand = direction_ === 'expand';
       const first: Keyframe = { height: `${from.height}px`, marginTop: `${from.marginTop}px` };
       const last: Keyframe = { height: `${to.height}px`, marginTop: `${to.marginTop}px` };
       if (from.marginBottom !== undefined) first.marginBottom = `${from.marginBottom}px`;
@@ -499,14 +510,9 @@ export function animateFoldRows(
         first.opacity = expand ? '0' : '1';
         last.opacity = expand ? '1' : '0';
       }
-      const anim = deps.animate(el, [first, last], animationOptions);
-      animations.set(el, anim);
+      animations.set(el, deps.animate(el, [first, last], animationOptions));
     };
-    for (let i = 0; i < memberRows.length; i += 1) {
-      const el = memberRows[i];
-      const m = measures[i];
-      if (el === undefined || m === undefined) continue;
-      const expand = direction_ === 'expand';
+    for (const [el, m] of measures) {
       // 展开淡入（0→1）、收起淡出（1→0）：动画全程内容可见性连续过渡。
       startAnimation(
         el,
@@ -538,11 +544,11 @@ export function animateFoldRows(
     }
     void readyPromise.then((measures) => {
       if (finished || myGeneration !== measureGeneration) return;
-      if (measures.length === 0) {
-        settle(); // 展开方向 3 次仍测不到（隐藏行/内容异步）：放弃动画。
+      // 展开方向 3 次仍测不到（隐藏行/内容异步）：放弃动画。
+      if (measures.size === 0) {
+        settle();
         return;
       }
-      if (phase !== 'measuring') return;
       runAnimation(measures);
     });
   };
@@ -566,7 +572,7 @@ export function animateFoldRows(
       }
       direction_ = direction_ === 'expand' ? 'collapse' : 'expand';
       done = nextDone;
-      if (phase === 'measuring') {
+      if (currentMeasures === undefined) {
         // 测量还没出结果：重新发起（旧测量回调因 isStale 被放弃）。展开
         // 首测失败后的预压态行被压 0，收起方向同步测量会得 0 高——先解除
         // 预压恢复自然布局再重测。begin 内可能同步 settle（收起首帧测不
@@ -576,20 +582,12 @@ export function animateFoldRows(
         begin();
         return !finished;
       }
-      if (currentMeasures === undefined) {
-        // 理论不可达（animating 蕴含 currentMeasures 已赋值）；防御分支只
-        // 走 settle——它已调用新 done，不得再显式 nextDone 造成双调。
-        settle();
-        return false;
-      }
       // 动画进行中反转：保留同一批 WAAPI player 的当前进度，底层指定样式
       // 先切到新终态，再原地 reverse；取消重建会从端点重播并产生跳变。
       // flip 语义跟随新方向：反转成 collapse（此前是展开、flip 从未触发）
       // 重新武装一个短延迟 flip；反转成 expand 则撤掉未触发的 flip（open
       // 本就为 true）。flip 已触发过的情况由视图在 onDone 里补翻 open。
-      cancelFlipTimer();
-      animationGeneration += 1;
-      cancelFallback();
+      invalidate();
       applyTerminalStyles(direction_);
       try {
         for (const anim of animations.values()) anim.reverse();
@@ -607,8 +605,7 @@ export function animateFoldRows(
       finished = true;
       measureGeneration += 1;
       animationGeneration += 1;
-      cancelFallback();
-      cancelFlipTimer();
+      invalidate();
       cancelAnimations();
       clearAllStyles();
     },
@@ -635,7 +632,7 @@ export function animateCompanionCatchUp(
       { height: `${fromHeight}px` },
       { height: `${toHeight}px` },
     ],
-    { duration: CATCH_UP_MS, easing: 'cubic-bezier(0.2, 0, 0, 1)', fill: 'both' },
+    foldTiming(CATCH_UP_MS),
   );
   // 终帧与官方值一致：结束后取消 fill effect 交还官方样式（释放瞬间无
   // 视觉差），避免长期 fill 压住后续官方提交。

@@ -43,6 +43,10 @@ buildLocationData → Turn data: ConversationTurnDataMap['turn-activity']
 | 成员行隐藏 | ChatNodeSeat + searchable-hidden | `processHidden = foldable && processMember && !processOpen` → wrapper `hidden="until-found"`；`setOpen(true)` 回流即摘除；shadow renderer return null 后空 wrapper 被官方 `.flowItem:empty{display:none}` 吞掉 |
 | `loadOlder` | session-controller session.ts | `session.loadOlder()`：幂等（openState/hasMore/loadingOlder 三重护栏）；**hasMore 期间官方折叠条整体禁用**（historyIncomplete）——自动加载完成后折叠才生效，属官方既定行为 |
 | 类型加载 | 插件 tsconfig paths + `import type {}` | 官方 augment（SlotMap/SessionStandardProps/ConversationTurnDataMap）必须由插件**显式** `import type {} from '@deepseek-ai/dsh-client-ui-chat/client'` 等加载；paths 禁止指向任何本地 stub |
+| 成员行圈定 | ChatNodeSeat wrapper | 成员行 wrapper 挂 `data-chat-turn="<n>"` + `data-turn-process-member`（`processRowsSelector` 的圈定依据）；`data-turn-process-hidden` 随隐藏状态挂/摘，是选择器 `:not()` 排除项 |
+| flow 列容器拓扑 | ui-chat transcript 列 | 折叠条 button 与成员行互为兄弟、同列：`bar.closest('[data-chat-flow-key]')?.parentElement` 即列容器（唯一实现在 `resolveFlowColumn`；升级时核查层级有无加包装） |
+| answer 行圈定 | 同列兄弟行 | answer 行 = bar 之后第一个 `data-chat-flow-kind="assistant-step"` 且非成员行的 `data-chat-turn` 同值元素（视图 `findAnswerRow`） |
+| `data-turn-process-answer` | answer 行 compact 形态 | 官方 gap 变量的选择器锚点：视图在点击同步块临时挂/摘该属性实测 compact margin-top 终值（`collapseCompanionPlans`） |
 
 ## renderer 行为表（fold-bar-view.tsx）
 
