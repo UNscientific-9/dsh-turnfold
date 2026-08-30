@@ -21,6 +21,28 @@ export interface CollapsePersistence {
 }
 
 /**
+ * 浏览器 localStorage 守卫：Node 测试、隐私降级等无 storage 环境返回
+ * undefined，调用方各自决定降级方向。
+ */
+export function getLocalStorage(): Storage | undefined {
+  return typeof localStorage !== 'undefined' ? localStorage : undefined;
+}
+
+/**
+ * 容错读取布尔开关的原始字符串：storage 缺席或 getItem 抛错（隐私模式等）
+ * 一律归一为 undefined，由调用方套默认方向（`=== '1'` 默认关 / `!== '0'`
+ * 默认开）。
+ */
+export function readFlag(storage: Storage | undefined, key: string): string | undefined {
+  if (storage === undefined) return undefined;
+  try {
+    return storage.getItem(key) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Tolerant storage adapter: quota/privacy-mode errors degrade to a no-op.
  * A module-lifetime MEMORY layer sits in front of storage: `write` always
  * lands in memory (so the store behaves identically even when setItem throws
@@ -58,8 +80,7 @@ export function createStoragePersistence(storage: Storage | undefined): Collapse
 
 function isPersistedMap(value: unknown): value is PersistedMap {
   if (typeof value !== 'object' || value === null) return false;
-  for (const [sessionId, turns] of Object.entries(value)) {
-    if (typeof sessionId !== 'string') return false;
+  for (const [, turns] of Object.entries(value)) {
     if (typeof turns !== 'object' || turns === null) return false;
     for (const [turn, state] of Object.entries(turns)) {
       if (!/^\d+$/.test(turn)) return false;

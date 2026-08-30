@@ -63,17 +63,17 @@ export interface FoldAnimateDeps {
 }
 
 /**
- * 等成员行「布局就绪」再测量自然高。官方 hidden 由父组件 ChatNodeSeat 的
- * useLayoutEffect 摘除（React layout effect 子先于父），所以行从 hidden 到
- * 可见后，内容（工具卡片等）可能异步物化，offsetHeight 要等内容渲染完才
- * 稳定。
+ * 等成员行「布局就绪」再测量自然高（时序与驱动选型的完整论证见文件头）。
+ * 官方 hidden 由父组件 ChatNodeSeat 的 useLayoutEffect 摘除（React layout
+ * effect 子先于父），所以行从 hidden 到可见后，内容（工具卡片等）可能异步
+ * 物化，offsetHeight 要等内容渲染完才稳定。
  *
  * 收起方向行本就可见，首帧同步测量，未就绪直接放弃（退化官方瞬间切换）。
- * 展开方向先用微任务首测（paint 前，见文件头注释），首测不全成功则预压 0
- * （`presetZero`）并回退 setTimeout 轮询——预压后行高为 0，测量改走「临时
- * 解除 height 约束 → 读 → 立即写回」。`isStale` 供测量中途 reverse/cancel/
- * finish 时作废未决的调度（否则旧回调会再次预压/挂轮询，留下无人清理的
- * 预压样式）。仍测不到就放弃，绝不把 0 当目标。
+ * 展开方向先用微任务首测，首测不全成功则预压 0（`presetZero`）并回退
+ * setTimeout 轮询——预压后行高为 0，测量改走「临时解除 height 约束 → 读 →
+ * 立即写回」。`isStale` 供测量中途 reverse/cancel/finish 时作废未决的调度
+ * （否则旧回调会再次预压/挂轮询，留下无人清理的预压样式）。仍测不到就放弃，
+ * 绝不把 0 当目标。
  */
 function measureWhenReady(
   rows: readonly HTMLElement[],
@@ -165,6 +165,8 @@ const browserDeps: FoldAnimateDeps = {
 };
 
 export interface FoldAnimationHandle {
+  /** 当前动画方向（reverse 时翻转）；视图由此推导反转目标，无需平行记账。 */
+  readonly direction: FoldDirection;
   /**
    * 反转方向（动画进行中再次点击折叠条）。行保持在动画态，WAAPI 动画从
    * 当前值平滑过渡到新目标；完成回调替换为 `onDone`。
@@ -181,18 +183,12 @@ export interface FoldAnimationHandle {
 const DURATION_MS = 220;
 
 /**
- * 对成员行执行一次高度过渡。`rows` 为空或用户偏好减少动效时立即完成
- * （不写任何样式）。同一时刻一个 turn 只应有一个动画——再次交互由调用
- * 方通过 `reverse` 处理。
- *
- * 时序（等 hidden 摘后测高）：先等自然高就绪（展开方向微任务首测，失败
- * 预压 0 后 setTimeout 轮询至多 3 次总机会；收起方向首帧同步），就绪后用
- * **Web Animations API**（el.animate）驱动 height/margin-top/opacity 过渡。
- * WAAPI 由浏览器合成器驱动，不依赖 requestAnimationFrame 或 CSS transition
- * 的「起点帧」——IAB 后台/未激活面板里 rAF 停发、渲染帧被抑制，CSS
- * transition 的起点无法可靠建立（同帧「锁自然高 + 写 0」会让起点被覆盖成
- * 0，动画直接跳 0），WAAPI 则照常播放。测量不到自然高时放弃动画（回退
- * 官方瞬间切换），绝不把 0 当目标（0→0 无过渡 = 内容消失）。
+ * 对成员行执行一次高度过渡（测量的时序策略与 WAAPI 选型理由见文件头）：
+ * 展开方向微任务首测、失败预压 0 后轮询至多 3 次总机会，收起方向首帧同步；
+ * 就绪后用 el.animate 驱动 height/margin-top/opacity 过渡。`rows` 为空或
+ * 用户偏好减少动效时立即完成（不写任何样式）。同一时刻一个 turn 只应有一
+ * 个动画——再次交互由调用方通过 `reverse` 处理。测量不到自然高时放弃动画
+ * （回退官方瞬间切换），绝不把 0 当目标（0→0 无过渡 = 内容消失）。
  */
 export function animateFoldRows(
   rows: readonly HTMLElement[],
@@ -202,13 +198,17 @@ export function animateFoldRows(
 ): FoldAnimationHandle {
   if (rows.length === 0 || deps.reducedMotion()) {
     onDone();
-    return { reverse() { return false; }, cancel() { /* 无痕迹 */ } };
+    return {
+      get direction() { return direction; },
+      reverse() { return false; },
+      cancel() { /* 无痕迹 */ },
+    };
   }
 
   let direction_ = direction;
   let finished = false;
   let done = onDone;
-  let animations = new Map<HTMLElement, ReturnType<FoldAnimateDeps['animate']>>();
+  const animations = new Map<HTMLElement, ReturnType<FoldAnimateDeps['animate']>>();
   let timeout: unknown;
 
   const clearStyles = (): void => {
@@ -232,12 +232,17 @@ export function animateFoldRows(
     }
   };
 
-  const settle = (): void => {
-    if (finished) return;
-    finished = true;
+  /** 取消全部行动画与兜底 timeout（settle / reverse / cancel 共用）。 */
+  const teardown = (): void => {
     for (const anim of animations.values()) anim.cancel();
     animations.clear();
     if (timeout !== undefined) deps.cancelTimeout(timeout);
+  };
+
+  const settle = (): void => {
+    if (finished) return;
+    finished = true;
+    teardown();
     clearStyles();
     done();
   };
@@ -283,10 +288,10 @@ export function animateFoldRows(
     timeout = deps.scheduleTimeout(settle, DURATION_MS + 500);
   };
 
-  // —— 状态机：measuring（等自然高就绪）→ animating（过渡中）→ done ——
+  // —— 状态机：measuring（等自然高就绪）→ animating（过渡中），settle 即终 ——
   // reverse 在 measuring 阶段重新测量（方向已变，旧轮询的 natural 缓存
   // 无效）：generation 递增，旧测量回调检测到变化即放弃。
-  let phase: 'measuring' | 'animating' | 'done' = 'measuring';
+  let phase: 'measuring' | 'animating' = 'measuring';
   let currentMeasures: RowMeasure[] | undefined;
   let generation = 0;
 
@@ -304,7 +309,7 @@ export function animateFoldRows(
       return;
     }
     void readyPromise.then((measures) => {
-      if (finished || phase === 'done' || myGeneration !== generation) return;
+      if (finished || myGeneration !== generation) return;
       if (measures.length === 0) {
         settle(); // 展开方向 3 次仍测不到（隐藏行/内容异步）：放弃动画。
         return;
@@ -319,8 +324,11 @@ export function animateFoldRows(
   begin();
 
   return {
+    get direction(): FoldDirection {
+      return direction_;
+    },
     reverse(nextDone: () => void): boolean {
-      if (finished || phase === 'done') {
+      if (finished) {
         nextDone();
         return false;
       }
@@ -343,18 +351,14 @@ export function animateFoldRows(
         return false;
       }
       // 动画进行中反转：取消旧动画，从当前值过渡到新方向目标。
-      for (const anim of animations.values()) anim.cancel();
-      animations.clear();
-      if (timeout !== undefined) deps.cancelTimeout(timeout);
+      teardown();
       runAnimation(currentMeasures);
       return true;
     },
     cancel(): void {
       if (finished) return;
       finished = true;
-      for (const anim of animations.values()) anim.cancel();
-      animations.clear();
-      if (timeout !== undefined) deps.cancelTimeout(timeout);
+      teardown();
       clearStyles();
     },
   };

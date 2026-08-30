@@ -6,6 +6,7 @@
  * location 供 shadow renderer 读取）与「增强决策」（completed 白名单、
  * 折叠条文案）。所有函数纯逻辑，localStorage 经参数注入。
  */
+import { readFlag } from './persist.ts';
 import type { TurnEndReasonKind } from './activity-state.ts';
 import type { TurnActivityKey } from './locales.ts';
 
@@ -25,12 +26,7 @@ export const COMPLETED_ONLY_KEY = 'dsh.turn-collapse.completedOnly';
 
 /** Feature switch: `'1'` enables; missing/unreadable storage defaults to off. */
 export function isCompletedOnlyEnabled(storage: Storage | undefined): boolean {
-  if (storage === undefined) return false;
-  try {
-    return storage.getItem(COMPLETED_ONLY_KEY) === '1';
-  } catch {
-    return false;
-  }
+  return readFlag(storage, COMPLETED_ONLY_KEY) === '1';
 }
 
 /**
@@ -71,21 +67,13 @@ export function composeFoldBarLabel(
 ): { base: string; augment: string } {
   const { t } = kit;
   const segments: string[] = [];
-  if (counts.toolCallCount > 0) {
-    segments.push(t(counts.toolCallCount === 1
-      ? 'turnActivity.bar.toolCallsOne'
-      : 'turnActivity.bar.toolCallsOther', { count: counts.toolCallCount }));
-  }
-  if (counts.messageCount > 0) {
-    segments.push(t(counts.messageCount === 1
-      ? 'turnActivity.bar.messagesOne'
-      : 'turnActivity.bar.messagesOther', { count: counts.messageCount }));
-  }
-  if (counts.subagentCount > 0) {
-    segments.push(t(counts.subagentCount === 1
-      ? 'turnActivity.bar.subagentsOne'
-      : 'turnActivity.bar.subagentsOther', { count: counts.subagentCount }));
-  }
+  // 官方计数段的统一装配：n > 0 才上屏，one/other 按计数二分。
+  const addCount = (n: number, one: TurnActivityKey, other: TurnActivityKey): void => {
+    if (n > 0) segments.push(t(n === 1 ? one : other, { count: n }));
+  };
+  addCount(counts.toolCallCount, 'turnActivity.bar.toolCallsOne', 'turnActivity.bar.toolCallsOther');
+  addCount(counts.messageCount, 'turnActivity.bar.messagesOne', 'turnActivity.bar.messagesOther');
+  addCount(counts.subagentCount, 'turnActivity.bar.subagentsOne', 'turnActivity.bar.subagentsOther');
   const base = segments.length === 0
     ? t('turnActivity.bar.thoughtForAWhile')
     : segments.join(t('turnActivity.bar.separator'));

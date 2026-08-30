@@ -19,6 +19,8 @@
  * turned off with `localStorage['dsh.turn-collapse.autoLoad'] = '0'`.
  */
 
+import { getLocalStorage, readFlag } from './persist.ts';
+
 /** Minimal structural typing over the host sessions service (0.1.2 shape). */
 export interface AutoLoadBinding {
   session: { loadOlder?: () => Promise<void> };
@@ -31,18 +33,22 @@ export interface AutoLoadSessions {
 /** 会话身份来源（index.ts 装配：宿主 selection 快照 → localStorage 回退）。 */
 export type SessionIdReader = () => string | null;
 
+/** 惰性解析宿主 sessions 服务的 provider（每次派发时调用，boot order 自愈）。 */
+export type AutoLoadSessionsProvider = () => AutoLoadSessions | undefined;
+
+const AUTO_LOAD_KEY = 'dsh.turn-collapse.autoLoad';
 const SCROLL_HOST_SELECTOR = '[data-conversation-scroll]';
 const TOP_THRESHOLD_PX = 4;
 const CHECK_INTERVAL_MS = 200;
 const PACE_SECOND_PAGE_MS = 400;
 const PACE_CAP_MS = 1000;
 
-let sessions: AutoLoadSessions | undefined;
+let sessions: AutoLoadSessionsProvider = () => undefined;
 let readSessionId: SessionIdReader = () => null;
 
 /** Inject the host sessions service (called once at plugin mount). */
-export function setAutoLoadSessions(service: AutoLoadSessions | undefined): void {
-  sessions = service;
+export function setAutoLoadSessions(provider: AutoLoadSessionsProvider): void {
+  sessions = provider;
 }
 
 /** Install the session-identity reader (called once at plugin mount). */
@@ -53,12 +59,25 @@ export function setAutoLoadSessionReader(reader: SessionIdReader | undefined): v
 /** Feature switch: default ON, `'0'` disables. An unreadable switch (no
  *  storage — e.g. Node tests, private modes) defaults to ON. */
 export function isAutoLoadEnabled(storage: Storage | undefined): boolean {
-  if (storage === undefined) return true;
+  return readFlag(storage, AUTO_LOAD_KEY) !== '0';
+}
+
+/**
+ * 从宿主留在 localStorage 的 `dsh.sessions.current` 记录解析会话 id（格式
+ * 为宿主私有的 `{ sessionId: string }`）。格式不符 / 解析失败一律 null。
+ */
+export function readPersistedSessionId(raw: string | null): string | null {
+  if (raw === null) return null;
   try {
-    return storage.getItem('dsh.turn-collapse.autoLoad') !== '0';
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed === 'object' && parsed !== null) {
+      const id = (parsed as { sessionId?: unknown }).sessionId;
+      if (typeof id === 'string' && id !== '') return id;
+    }
   } catch {
-    return true;
+    // fall through to null
   }
+  return null;
 }
 
 const inFlight = new Set<string>();
@@ -66,7 +85,7 @@ const inFlight = new Set<string>();
 /** True when the call was dispatched (regardless of whether a page landed). */
 async function fireLoadOlder(sessionId: string): Promise<boolean> {
   if (inFlight.has(sessionId)) return false;
-  const binding = sessions?.binding(sessionId);
+  const binding = sessions()?.binding(sessionId);
   if (binding === undefined || typeof binding.session.loadOlder !== 'function') return false;
   inFlight.add(sessionId);
   try {
@@ -91,11 +110,15 @@ interface Pace {
  * One pass of the check loop (exported for tests): walk every conversation
  * scroller resting at the top and dispatch the current session's loadOlder,
  * pacing consecutive pulls. Returns the session ids actually dispatched.
+ * `enabled` 可注入以跳过开关读取（startAutoLoad 启动时解析一次传入）。
  */
-export async function checkAutoLoadOnce(doc: Document, now: number = Date.now()): Promise<string[]> {
+export async function checkAutoLoadOnce(
+  doc: Document,
+  now: number = Date.now(),
+  enabled: boolean = isAutoLoadEnabled(getLocalStorage()),
+): Promise<string[]> {
   const paces = paceMapFor(doc);
-  const storage = typeof localStorage !== 'undefined' ? localStorage : undefined;
-  if (!isAutoLoadEnabled(storage)) return [];
+  if (!enabled) return [];
   const sessionId = readSessionId();
   if (sessionId === null) return [];
   const dispatched: string[] = [];
@@ -138,11 +161,14 @@ function paceMapFor(doc: Document): WeakMap<HTMLElement, Pace> {
 /**
  * Start one document-level check loop. Returns the disposer. The loop is a
  * single interval touching `scrollTop` of the (few) conversation scrollers
- * — no per-scroll listener, no layout reads beyond `scrollTop`.
+ * — no per-scroll listener, no layout reads beyond `scrollTop`. Feature
+ * switch is resolved once at start (runtime changes take effect on reload,
+ * same as the other settings).
  */
 export function startAutoLoad(doc: Document): () => void {
+  const enabled = isAutoLoadEnabled(getLocalStorage());
   const timer = setInterval(() => {
-    void checkAutoLoadOnce(doc);
+    void checkAutoLoadOnce(doc, Date.now(), enabled);
   }, CHECK_INTERVAL_MS);
   return () => {
     clearInterval(timer);

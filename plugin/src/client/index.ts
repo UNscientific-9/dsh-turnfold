@@ -16,7 +16,14 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client';
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client';
 // Loads the SlotMap merge for `conversation.chat.node`（keyed slot 声明）。
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client';
-import { setAutoLoadSessionReader, setAutoLoadSessions, startAutoLoad, type AutoLoadSessions } from './auto-load.ts';
+import {
+  readPersistedSessionId,
+  setAutoLoadSessionReader,
+  setAutoLoadSessions,
+  startAutoLoad,
+  type AutoLoadSessions,
+} from './auto-load.ts';
+import { getLocalStorage } from './persist.ts';
 import { FoldBarView } from './fold-bar-view.tsx';
 import { en, NS, zh } from './locales.ts';
 import { ensureStyles } from './styles.ts';
@@ -29,7 +36,7 @@ export const inject = ['slots', 'locale', 'uiConversation'];
 
 /** Bumped with every shipped change: shows up once in the browser console
  *  so a stale bundle (DSH serves the pnpm-installed copy) is obvious. */
-export const CLIENT_VERSION = '0.3.1';
+export const CLIENT_VERSION = '0.3.2';
 
 export function apply(ctx: Context): void {
   // One-shot load marker: makes "which bundle is the browser running"
@@ -55,16 +62,18 @@ export function apply(ctx: Context): void {
     ),
   );
 
-  // Auto-load-older rides the host sessions service; if it is not mounted
-  // yet (boot order), auto-load degrades to off until the next plugin mount.
-  // Session identity comes from the host selection snapshot first, then the
-  // persisted record DSH keeps in localStorage (`dsh.sessions.current`, which
-  // updates on every session switch).
-  try {
-    setAutoLoadSessions(ctx.get('sessions') as unknown as AutoLoadSessions);
-  } catch {
-    setAutoLoadSessions(undefined);
-  }
+  // Auto-load-older rides the host sessions service, resolved lazily on every
+  // dispatch (boot order self-heals: a not-yet-mounted service resolves on a
+  // later tick). Session identity comes from the host selection snapshot
+  // first, then the persisted record DSH keeps in localStorage
+  // (`dsh.sessions.current`, which updates on every session switch).
+  setAutoLoadSessions(() => {
+    try {
+      return ctx.get('sessions') as unknown as AutoLoadSessions;
+    } catch {
+      return undefined;
+    }
+  });
   setAutoLoadSessionReader(() => {
     try {
       const sessions = ctx.get('sessions') as unknown as {
@@ -76,22 +85,11 @@ export function apply(ctx: Context): void {
       // fall through to the persisted record
     }
     try {
-      const raw = localStorage.getItem('dsh.sessions.current');
-      if (raw !== null) {
-        const parsed: unknown = JSON.parse(raw);
-        if (
-          typeof parsed === 'object' &&
-          parsed !== null &&
-          typeof (parsed as { sessionId?: unknown }).sessionId === 'string'
-        ) {
-          const id = (parsed as { sessionId: string }).sessionId;
-          if (id !== '') return id;
-        }
-      }
+      return readPersistedSessionId(getLocalStorage()?.getItem('dsh.sessions.current') ?? null);
     } catch {
       // no persisted record — auto-load idles this tick
+      return null;
     }
-    return null;
   });
 
   ctx.effect(

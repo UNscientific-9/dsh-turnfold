@@ -1,7 +1,8 @@
 /** Locale dictionaries owned by this plugin (Chinese is the key-set source of truth). */
 export const NS = 'turnActivity';
 
-export type TurnActivityKey = keyof typeof zh | keyof typeof en;
+/** en 经 satisfies 强制覆盖 zh 全部键——双语键集漂移在编译期暴露。 */
+export type TurnActivityKey = keyof typeof zh;
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -10,11 +11,10 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 /**
- * Stable locale tag emitted by the dictionaries. The fold-bar view uses it to
- * pick a duration formatter that matches the rest of the label, even when the
- * user's `navigator.language` is set to a different language.
+ * Stable locale tag emitted by the dictionaries (`turnActivity.durationLocale`
+ * key): `'zh'` or `'en'`. The fold-bar view uses it to pick a duration
+ * formatter that matches the rest of the label.
  */
-export type DurationLocaleTag = 'zh' | 'en';
 
 /**
  * 键集对齐官方折叠条文案的语义（计数段 one/other 二分 + 分隔符 + 全零
@@ -48,4 +48,4 @@ export const en = {
   'turnActivity.bar.duration': 'took {time}',
   'turnActivity.bar.thinkingOne': '{count} thinking segment',
   'turnActivity.bar.thinkingOther': '{count} thinking segments',
-} as const satisfies Record<string, string>;
+} as const satisfies { [K in keyof typeof zh]: string };

@@ -30,7 +30,7 @@ function service(calls: string[]): AutoLoadSessions {
 
 test('auto-load fires loadOlder for hosts resting at the top', async () => {
   const calls: string[] = [];
-  setAutoLoadSessions(service(calls));
+  setAutoLoadSessions(() => service(calls));
   setAutoLoadSessionReader(() => 's1');
   const doc = docWith([{ scrollTop: 0 }]);
   const dispatched = await checkAutoLoadOnce(doc, 1000);
@@ -41,7 +41,7 @@ test('auto-load fires loadOlder for hosts resting at the top', async () => {
 
 test('auto-load skips hosts scrolled away and sessions without an identity', async () => {
   const calls: string[] = [];
-  setAutoLoadSessions(service(calls));
+  setAutoLoadSessions(() => service(calls));
   setAutoLoadSessionReader(() => 's1');
   // Two hosts: the scrolled-away one is skipped, only the top one dispatches.
   const doc = docWith([{ scrollTop: 120 }, { scrollTop: 0 }]);
@@ -55,7 +55,7 @@ test('auto-load skips hosts scrolled away and sessions without an identity', asy
 
 test('auto-load paces consecutive pulls (second pull within the window is skipped)', async () => {
   const calls: string[] = [];
-  setAutoLoadSessions(service(calls));
+  setAutoLoadSessions(() => service(calls));
   setAutoLoadSessionReader(() => 's1');
   const doc = docWith([{ scrollTop: 0 }]);
   assert.equal((await checkAutoLoadOnce(doc, 1000)).length, 1);
@@ -67,7 +67,7 @@ test('auto-load paces consecutive pulls (second pull within the window is skippe
 
 test('disabled switch stops all dispatches', async () => {
   const calls: string[] = [];
-  setAutoLoadSessions(service(calls));
+  setAutoLoadSessions(() => service(calls));
   setAutoLoadSessionReader(() => 's1');
   const previous = globalThis.localStorage;
   // Simulate the off switch with a storage stub.
@@ -88,18 +88,18 @@ test('disabled switch stops all dispatches', async () => {
 
 test('auto-load degrades when the binding is missing or loadOlder throws', async () => {
   // binding 缺失：整个 pass no-op，且不重置别的 host pace（此处只有 no-op）。
-  setAutoLoadSessions({
+  setAutoLoadSessions(() => ({
     binding() {
       return undefined;
     },
-  });
+  }));
   setAutoLoadSessionReader(() => 's1');
   assert.deepEqual(await checkAutoLoadOnce(docWith([{ scrollTop: 0 }]), 1000), []);
 
   // loadOlder 抛错：dispatch 视为失败，pace 重置（下一次 tick 立即重试）。
   const calls: string[] = [];
   let attempts = 0;
-  setAutoLoadSessions({
+  setAutoLoadSessions(() => ({
     binding(id: string) {
       return {
         session: {
@@ -111,7 +111,7 @@ test('auto-load degrades when the binding is missing or loadOlder throws', async
         },
       };
     },
-  });
+  }));
   const doc = docWith([{ scrollTop: 0 }]);
   assert.deepEqual(await checkAutoLoadOnce(doc, 2000), [], 'first attempt fails');
   await new Promise((r) => setTimeout(r, 10));
@@ -126,7 +126,7 @@ test('auto-load rejects a second dispatch while one is still in flight', async (
     release = resolve;
   });
   let started = 0;
-  setAutoLoadSessions({
+  setAutoLoadSessions(() => ({
     binding() {
       return {
         session: {
@@ -137,7 +137,7 @@ test('auto-load rejects a second dispatch while one is still in flight', async (
         },
       };
     },
-  });
+  }));
   setAutoLoadSessionReader(() => 's1');
   const doc = docWith([{ scrollTop: 0 }]);
   const first = checkAutoLoadOnce(doc, 3000);

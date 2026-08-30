@@ -17,8 +17,6 @@ export function splitDuration(ms: number): DurationParts {
   };
 }
 
-export type DurationFormatter = (parts: DurationParts) => string;
-
 /** Default (Chinese, matches the product's primary UI language). */
 export function formatDurationChinese(ms: number): string {
   const { hours, minutes, seconds } = splitDuration(ms);

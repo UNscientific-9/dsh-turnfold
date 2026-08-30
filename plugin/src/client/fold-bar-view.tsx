@@ -35,6 +35,7 @@ import {
 import { formatDurationChinese, formatDurationEnglish } from './format.ts';
 import {
   createStoragePersistence,
+  getLocalStorage,
   readPersistedTurn,
   withPersistedTurn,
   type CollapsePersistence,
@@ -61,23 +62,17 @@ function formatDuration(ms: number, t: FoldBarViewProps['t']): string {
   return lang.toLowerCase().startsWith('zh') ? formatDurationChinese(ms) : formatDurationEnglish(ms);
 }
 
-function getStorage(): Storage | undefined {
-  return typeof localStorage !== 'undefined' ? localStorage : undefined;
-}
-
 /** Module-lifetime persistence (memory-cached storage adapter). */
 let persistence: CollapsePersistence | undefined;
 function getPersistence(): CollapsePersistence {
   if (persistence === undefined) {
-    persistence = createStoragePersistence(getStorage());
+    persistence = createStoragePersistence(getLocalStorage());
   }
   return persistence;
 }
 
-/** 测试注入点：注入 undefined 恢复惰性默认。 */
-export function setFoldPersistence(value: CollapsePersistence | undefined): void {
-  persistence = value;
-}
+/** completed 白名单开关（模块生命周期读一次；改动后刷新生效，与其他设置一致）。 */
+const COMPLETED_ONLY_ENABLED = isCompletedOnlyEnabled(getLocalStorage());
 
 export const FoldBarView = memo(function FoldBarView({
   node,
@@ -93,7 +88,7 @@ export const FoldBarView = memo(function FoldBarView({
   const { foldable, open, setOpen } = turnProcess;
   const turn = node.data.turn;
   const forceExpand = foldable
-    && shouldForceExpand(augment?.reasonKind, isCompletedOnlyEnabled(getStorage()));
+    && shouldForceExpand(augment?.reasonKind, COMPLETED_ONLY_ENABLED);
 
   // —— 展开/收起动画的状态（见 fold-animate.ts）——
   const barRef = useRef<HTMLButtonElement>(null);
@@ -101,12 +96,16 @@ export const FoldBarView = memo(function FoldBarView({
   // 程序性恢复（persist 恢复 / 白名单强制展开）置位：下一次 open 翻转不播
   // 动画——刷新时几十个轮同时恢复，逐个播放会整页跳动。
   const skipAnimRef = useRef(false);
-  const animationRef = useRef<{ handle: FoldAnimationHandle; direction: FoldDirection } | undefined>(
-    undefined,
-  );
+  const animationRef = useRef<FoldAnimationHandle | undefined>(undefined);
+
+  /** 程序性展开（置位 skipAnim + setOpen 必须成对，收敛于此防止漏抄）。 */
+  const openSilently = (): void => {
+    skipAnimRef.current = true;
+    setOpen(true);
+  };
 
   useEffect(() => () => {
-    animationRef.current?.handle.cancel();
+    animationRef.current?.cancel();
     animationRef.current = undefined;
   }, []);
 
@@ -129,7 +128,7 @@ export const FoldBarView = memo(function FoldBarView({
     const handle = animateFoldRows(rows, 'expand', () => {
       animationRef.current = undefined;
     });
-    animationRef.current = { handle, direction: 'expand' };
+    animationRef.current = handle;
   }, [foldable, open, turn]);
 
   useEffect(() => {
@@ -138,10 +137,7 @@ export const FoldBarView = memo(function FoldBarView({
       // 白名单轮：官方默认收起（store 无条目），强制展开后官方 store 持有
       // 该条目，effect 收敛不再触发。用户在此形态下没有收起入口——这正是
       // 「中断轮不折叠」的语义。
-      if (!open) {
-        skipAnimRef.current = true;
-        setOpen(true);
-      }
+      if (!open) openSilently();
       return;
     }
     if (open) return;
@@ -149,8 +145,7 @@ export const FoldBarView = memo(function FoldBarView({
     // 'expanded' 的轮经 setOpen 回流恢复。generation 变化（答案重写）后
     // 同样走这里，把用户意愿套到新 generation 上。
     if (readPersistedTurn(getPersistence(), sessionId, turn) === 'expanded') {
-      skipAnimRef.current = true;
-      setOpen(true);
+      openSilently();
     }
   }, [foldable, forceExpand, open, setOpen, sessionId, turn]);
 
@@ -162,18 +157,21 @@ export const FoldBarView = memo(function FoldBarView({
   });
   const toggle = (): void => {
     const store = getPersistence();
+    const persist = (dir: FoldDirection): void => {
+      store.write(withPersistedTurn(store, sessionId, turn, dir === 'expand' ? 'expanded' : 'collapsed'));
+    };
     if (animationRef.current !== undefined) {
       // 动画进行中再点：视觉正在去的方向的反面就是用户要的，直接反转。
-      const { handle, direction } = animationRef.current;
-      const next: FoldDirection = direction === 'expand' ? 'collapse' : 'expand';
+      const handle = animationRef.current;
+      const next: FoldDirection = handle.direction === 'expand' ? 'collapse' : 'expand';
       const active = handle.reverse(() => {
         animationRef.current = undefined;
         if (next === 'collapse') setOpen(false);
       });
       // 反转落在同步 settle 上时，完成回调已清空 animationRef——不得再
       // 覆盖成已完成的 handle，否则残留 handle 让后续点击永久短路。
-      if (active) animationRef.current = { handle, direction: next };
-      store.write(withPersistedTurn(store, sessionId, turn, next === 'expand' ? 'expanded' : 'collapsed'));
+      if (active) animationRef.current = handle;
+      persist(next);
       return;
     }
     if (open) {
@@ -187,15 +185,15 @@ export const FoldBarView = memo(function FoldBarView({
           animationRef.current = undefined;
           setOpen(false);
         });
-        animationRef.current = { handle, direction: 'collapse' };
-        store.write(withPersistedTurn(store, sessionId, turn, 'collapsed'));
+        animationRef.current = handle;
+        persist('collapse');
         return;
       }
     }
     // 展开意图（或不可动画的收起）：直接交官方状态机，展开动画由上面的
     // layout effect 补播。
     setOpen(!open);
-    store.write(withPersistedTurn(store, sessionId, turn, open ? 'collapsed' : 'expanded'));
+    persist(open ? 'collapse' : 'expand');
   };
   return (
     <button
@@ -240,5 +238,3 @@ export const FoldBarView = memo(function FoldBarView({
     </button>
   );
 });
-
-export default FoldBarView;
