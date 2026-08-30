@@ -27,10 +27,14 @@ import {
   type TurnActivityAugment,
 } from './activity-augment.ts';
 import {
+  animateCompanionCatchUp,
   animateFoldRows,
+  clearPinnedRows,
   collectProcessRows,
   type FoldAnimationHandle,
   type FoldDirection,
+  type CompanionGeometry,
+  type FoldRowPlan,
 } from './fold-animate.ts';
 import { formatDurationChinese, formatDurationEnglish } from './format.ts';
 import {
@@ -71,6 +75,101 @@ function getPersistence(): CollapsePersistence {
   return persistence;
 }
 
+// —— open 翻转的伴生几何（真机逐帧实证的抽动源，见 fold-animate.ts 文件头）——
+// open 翻转的官方提交会瞬时改折叠条自身（closed 态 margin-bottom）与 answer
+// 行（compact 形态差来自 React 内容）的几何；把这些目标与成员行纳入同一组
+// WAAPI 过渡，翻转提前到动画尾段（onFlip），突变帧即被动画吸收。
+
+const pxValue = (value: string): number => Number.parseFloat(value) || 0;
+
+function readGeometry(el: HTMLElement, withMarginBottom: boolean): CompanionGeometry {
+  const cs = getComputedStyle(el);
+  return {
+    height: el.offsetHeight,
+    marginTop: pxValue(cs.marginTop),
+    ...(withMarginBottom ? { marginBottom: pxValue(cs.marginBottom) } : {}),
+  };
+}
+
+/** bar 之后与本 turn 关联的第一个非成员 assistant-step 行（官方 answer 行）。 */
+function findAnswerRow(turn: number, bar: HTMLElement): HTMLElement | undefined {
+  const column = bar.closest('[data-chat-flow-key]')?.parentElement;
+  if (column === null || column === undefined) return undefined;
+  const sibs = [...column.children];
+  for (let i = sibs.indexOf(bar) + 1; i < sibs.length; i += 1) {
+    const el = sibs[i] as HTMLElement;
+    if (el.getAttribute('data-chat-turn') !== String(turn)) continue;
+    if (el.getAttribute('data-chat-flow-kind') === 'assistant-step'
+      && !el.hasAttribute('data-turn-process-member')) return el;
+  }
+  return undefined;
+}
+
+/**
+ * 收起动画的伴生 plan（调用点处于点击的同步块，官方 open 仍为 true——所有
+ * 「终态值」都用同同步块内的临时 DOM 改动模拟读出，不 paint）：
+ * - bar 的 closed margin-bottom：临时摘 `data-open` 读规则值再恢复；
+ * - answer 的 compact margin-top：临时挂 `data-turn-process-answer` 读
+ *   gap 变量效果再恢复；其高度差来自 React 内容、动画前测不到，主段不
+ *   动 height，flip 落地后由 `animateCompanionCatchUp` 追赶。
+ */
+function collapseCompanionPlans(
+  turn: number,
+  bar: HTMLButtonElement,
+): { plans: FoldRowPlan[]; ans?: { el: HTMLElement; fromHeight: number } } {
+  const plans: FoldRowPlan[] = [];
+  const hadOpen = bar.hasAttribute('data-open');
+  const barFrom = readGeometry(bar, true);
+  bar.removeAttribute('data-open');
+  const barTo = readGeometry(bar, true);
+  if (hadOpen) bar.setAttribute('data-open', '');
+  plans.push({ el: bar, role: 'companion', from: barFrom, to: barTo });
+  const ans = findAnswerRow(turn, bar);
+  let ansInfo: { el: HTMLElement; fromHeight: number } | undefined;
+  if (ans !== undefined) {
+    const ansFrom = readGeometry(ans, false);
+    ans.setAttribute('data-turn-process-answer', '');
+    const compactMargin = pxValue(getComputedStyle(ans).marginTop);
+    ans.removeAttribute('data-turn-process-answer');
+    plans.push({
+      el: ans,
+      role: 'companion',
+      from: ansFrom,
+      to: { height: ansFrom.height, marginTop: compactMargin },
+    });
+    ansInfo = { el: ans, fromHeight: ansFrom.height };
+  }
+  return { plans, ans: ansInfo };
+}
+
+/** 展开动画的伴生起点（点击同步块实测的收起态几何；终值由 layout effect 实测配对）。 */
+function measureCompanionStart(
+  turn: number,
+  bar: HTMLButtonElement,
+): { bar: CompanionGeometry; ans?: { el: HTMLElement; geo: CompanionGeometry } } {
+  const ans = findAnswerRow(turn, bar);
+  return {
+    bar: readGeometry(bar, true),
+    ans: ans === undefined ? undefined : { el: ans, geo: readGeometry(ans, false) },
+  };
+}
+
+/** 展开动画的伴生 plan：起点为点击前实测，终点为官方提交落地后的当前值。 */
+function expandCompanionPlans(
+  turn: number,
+  bar: HTMLButtonElement,
+  start: { bar: CompanionGeometry; ans?: { el: HTMLElement; geo: CompanionGeometry } },
+): FoldRowPlan[] {
+  const plans: FoldRowPlan[] = [
+    { el: bar, role: 'companion', from: start.bar, to: readGeometry(bar, true) },
+  ];
+  const ans = findAnswerRow(turn, bar);
+  if (ans !== undefined && start.ans !== undefined && start.ans.el === ans) {
+    plans.push({ el: ans, role: 'companion', from: start.ans.geo, to: readGeometry(ans, false) });
+  }
+  return plans;
+}
+
 /** completed 白名单开关（模块生命周期读一次；改动后刷新生效，与其他设置一致）。 */
 const COMPLETED_ONLY_ENABLED = isCompletedOnlyEnabled(getLocalStorage());
 
@@ -97,6 +196,13 @@ export const FoldBarView = memo(function FoldBarView({
   // 动画——刷新时几十个轮同时恢复，逐个播放会整页跳动。
   const skipAnimRef = useRef(false);
   const animationRef = useRef<FoldAnimationHandle | undefined>(undefined);
+  // 展开意图在 toggle 同步块实测的伴生起点（官方提交前），layout effect
+  // 消费后与官方终值配对成伴生动画。
+  const companionStartRef = useRef<
+    ReturnType<typeof measureCompanionStart> | undefined
+  >(undefined);
+  // collapse flip 落地后的 answer 形态追赶目标（flip 前实测高度）。
+  const catchUpRef = useRef<{ el: HTMLElement; fromHeight: number } | undefined>(undefined);
 
   /** 程序性展开（置位 skipAnim + setOpen 必须成对，收敛于此防止漏抄）。 */
   const openSilently = (): void => {
@@ -113,22 +219,64 @@ export const FoldBarView = memo(function FoldBarView({
     const previous = prevOpenRef.current;
     prevOpenRef.current = open;
     if (previous === open) return;
-    if (!foldable || !open || skipAnimRef.current) {
+    if (!foldable) return;
+    if (!open) {
+      skipAnimRef.current = false;
+      // collapse 的 flip 已把官方 open 翻成 false（或动画完成后 onDone 兜
+      // 底翻转）：官方 hidden 在本次提交的父组件 layout effect 里挂上（子
+      // 先父后，此刻可能还没挂）。answer 形态差在本 layout effect（paint
+      // 前）用 WAAPI 从 flip 前实测值平滑追赶，不露出突变帧；钉住的终态
+      // 内联样式等一拍宏任务清理（hidden 必已生效，清理本身不可见）。
+      const catchUp = catchUpRef.current;
+      catchUpRef.current = undefined;
+      const bar = barRef.current;
+      if (bar === null) return;
+      if (catchUp !== undefined && catchUp.el.isConnected) {
+        // 慢路径兜底会在 answer 行留下主动画的 height 终态内联（官方提交
+        // 后已失真）；追赶 WAAPI 此刻正从上方覆盖，清内联无视觉差。
+        const el = catchUp.el;
+        const fromHeight = catchUp.fromHeight;
+        el.style.height = '';
+        // answer 的 compact 形态由官方组件在 flip 提交之后的自有更新里落
+        // 地（真机实测滞后 ~80ms，本 layout effect 时高度差尚未显现，直接
+        // 追赶会因差值 <1 空转）。ResizeObserver 在变化帧的渲染步骤
+        // （paint 前）回调，此刻启动追赶 WAAPI 可从 flip 前实测值平滑覆盖，
+        // 不露出突变帧。
+        const ro = new ResizeObserver(() => {
+          if (Math.abs(el.offsetHeight - fromHeight) < 1) return;
+          ro.disconnect();
+          animateCompanionCatchUp(el, fromHeight);
+        });
+        ro.observe(el);
+        setTimeout(() => ro.disconnect(), 800);
+      }
+      const timer = setTimeout(() => clearPinnedRows(turn, bar), 0);
+      return () => clearTimeout(timer);
+    }
+    if (skipAnimRef.current) {
       skipAnimRef.current = false;
       return;
     }
     // 用户点击触发的展开（toggle 里只调了 setOpen）：本 layout effect 跑在
     // 官方父组件摘 hidden 之前（React layout effect 子先父后），动画在微任务
     // 里等全部 layout effect 结束、paint 之前测高并压 0 启动——内容不会先
-    // 闪一帧完整形态再被压没。
+    // 闪一帧完整形态再被压没。伴生行（bar margin-bottom / answer 形态）的
+    // 起点在 toggle 同步块实测，终点是此刻官方提交落地后的当前值，与成员
+    // 行同组 WAAPI 过渡。
     const bar = barRef.current;
     if (bar === null) return;
     const rows = collectProcessRows(turn, bar);
+    const start = companionStartRef.current;
+    companionStartRef.current = undefined;
     if (rows.length === 0) return;
-    const handle = animateFoldRows(rows, 'expand', () => {
+    const plans: FoldRowPlan[] = rows.map((el) => ({ el, role: 'member' as const }));
+    if (start !== undefined) plans.push(...expandCompanionPlans(turn, bar, start));
+    const handle = animateFoldRows(plans, 'expand', () => {
       animationRef.current = undefined;
     });
-    animationRef.current = handle;
+    // reduced-motion / 测量失败可同步完成；不得把已结束的 handle 重新写回，
+    // 否则下一次点击会走反转分支并吞掉展开意图。
+    if (handle.active) animationRef.current = handle;
   }, [foldable, open, turn]);
 
   useEffect(() => {
@@ -164,9 +312,16 @@ export const FoldBarView = memo(function FoldBarView({
       // 动画进行中再点：视觉正在去的方向的反面就是用户要的，直接反转。
       const handle = animationRef.current;
       const next: FoldDirection = handle.direction === 'expand' ? 'collapse' : 'expand';
+      // flip 已把官方 open 翻成 false 之后反转回 expand，完成回调必须补翻
+      // 回 true，否则动画展开完官方仍是收起态。
+      const flipped = handle.flipFired;
       const active = handle.reverse(() => {
         animationRef.current = undefined;
         if (next === 'collapse') setOpen(false);
+        else if (flipped) {
+          catchUpRef.current = undefined;
+          setOpen(true);
+        }
       });
       // 反转落在同步 settle 上时，完成回调已清空 animationRef——不得再
       // 覆盖成已完成的 handle，否则残留 handle 让后续点击永久短路。
@@ -175,23 +330,36 @@ export const FoldBarView = memo(function FoldBarView({
       return;
     }
     if (open) {
-      // 收起：先播高度过渡，落地后再 setOpen(false) 摘内容（避免内容先
-      // 消失再看到空档）。没有可动画的成员行（纯 inline reasoning 轮）
-      // 时退化为官方的瞬时切换。
+      // 收起：先播高度过渡；flip 在主动画尾段把 setOpen(false) 提前到官方
+      // 提交（hidden/补偿几何/answer 形态切换全部落在动画窗口内），落地后
+      // 由 layout effect 补追赶动画并清理兜底钉住。没有可动画的成员行
+      // （纯 inline reasoning 轮）时退化为官方的瞬时切换。
       const bar = barRef.current;
       const rows = bar === null ? [] : collectProcessRows(turn, bar);
-      if (rows.length > 0) {
-        const handle = animateFoldRows(rows, 'collapse', () => {
-          animationRef.current = undefined;
-          setOpen(false);
-        });
-        animationRef.current = handle;
+      if (bar !== null && rows.length > 0) {
+        const memberPlans: FoldRowPlan[] = rows.map((el) => ({ el, role: 'member' as const }));
+        const { plans: companionPlans, ans } = collapseCompanionPlans(turn, bar);
+        catchUpRef.current = ans;
+        const handle = animateFoldRows(
+          [...memberPlans, ...companionPlans],
+          'collapse',
+          () => {
+            animationRef.current = undefined;
+            setOpen(false);
+          },
+          { onFlip: () => setOpen(false) },
+        );
+        if (handle.active) animationRef.current = handle;
         persist('collapse');
         return;
       }
     }
     // 展开意图（或不可动画的收起）：直接交官方状态机，展开动画由上面的
-    // layout effect 补播。
+    // layout effect 补播。展开前在点击同步块实测伴生起点（此刻仍是收起态
+    // 几何），官方提交后 layout effect 用它与终值配对成伴生动画。
+    if (!open && barRef.current !== null) {
+      companionStartRef.current = measureCompanionStart(turn, barRef.current);
+    }
     setOpen(!open);
     persist(open ? 'collapse' : 'expand');
   };

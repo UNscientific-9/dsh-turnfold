@@ -49,7 +49,8 @@ export const TURNFOLD_CSS = `
   color: var(--dsw-alias-label-tertiary);
 }
 /* 动画期类（fold-animate.ts 挂到成员行 wrapper）：动画由 WAAPI（el.animate）
- * 驱动，这里只提供 overflow hidden 兜底；内联样式动画结束即被移除。 */
+ * 驱动，这里只提供 overflow hidden 兜底；收起终态样式会保留到官方 hidden
+ * 落地，展开结束则立即清理。 */
 .dsh-tf-animating {
   overflow: hidden;
 }

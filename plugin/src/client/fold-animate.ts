@@ -1,7 +1,8 @@
 /**
  * 折叠条展开/收起动画：逐行动画成员行 wrapper（`data-chat-turn` +
- * `data-turn-process-member` 圈定）的 height + margin-top，完成后移除全部
- * 内联样式交还官方布局。
+ * `data-turn-process-member` 圈定）的 height + margin-top + opacity，并把
+ * open 翻转的「官方伴生几何」（折叠条 closed 态 margin-bottom、answer 行的
+ * compact 形态切换）一并纳入同一组 WAAPI 过渡。
  *
  * 时序（防闪帧）：官方在父组件 ChatNodeSeat 的 useLayoutEffect 里切
  * `hidden="until-found"`（React layout effect 子先于父），展开方向必须让
@@ -17,8 +18,25 @@
  *
  * 收起方向行本就可见，首帧同步测量。测量不到自然高时放弃动画。
  *
- * 驱动用 Web Animations API（el.animate）：由浏览器合成器驱动，不依赖 rAF
- * 或 CSS transition 的「起点帧」——IAB 后台/未激活面板里 rAF 停发、渲染帧
+ * open 翻转的官方提交会瞬时改一批非成员行的几何（真机逐帧实证的抽动源，
+ * 成员行动画本身平滑）：
+ * - 折叠条 closed 态 `margin-bottom: 8px`（本插件 styles 的
+ *   `.dsh-tf-bar:not([data-open])` 规则）会把 bar 与 answer 之间的行（如
+ *   system-prompt）净推下 8px——官方的补偿只对冲 answer 行自身的
+ *   margin-top（16→8），中间夹层行无人补偿；
+ * - answer 行内容随 open 重渲染，自身高度瞬间 ±40px（compactAnswer 形态
+ *   差来自 React 内容而非 CSS 属性，挂 `data-turn-process-answer` 属性无法
+ *   复现，动画前测不到终值）。
+ * 对策分三段：① bar 的 margin-bottom 是我们自己的元素与规则，收起时随主
+ * 动画 WAAPI 渐变到 closed 值（夹层行被平滑推下），提交帧官方值与动画终值
+ * 一致；② open 翻转提前到主动画尾段（`onFlip`，剩约 70ms 时
+ * `setOpen(false)`）——hidden 挂上时成员行 opacity 已近 0，answer 形态切换
+ * 落在收拢运动尾窗内；③ answer 高度差在 flip 落地后由视图层读官方新值补
+ * 一段短 WAAPI（从 flip 前实测值平滑到提交后实测值），两段值都是实测、无
+ * 硬编码。快速连点则原地 `Animation.reverse()`，保留当前进度。
+ *
+ * 驱动用 Web Animations API（el.animate）：由浏览器动画时间线驱动，不依赖
+ * rAF 或 CSS transition 的「起点帧」——IAB 后台/未激活面板里 rAF 停发、渲染帧
  * 被抑制，CSS transition 的起点无法可靠建立（同帧「锁自然高 + 写 0」会让
  * 起点被覆盖成 0，动画直接跳 0），WAAPI 则照常播放。微任务同样不依赖
  * rAF，后台场景时序不变。
@@ -40,12 +58,59 @@ export function collectProcessRows(turn: number, barRoot: HTMLElement): HTMLElem
   return [...column.querySelectorAll<HTMLElement>(processRowsSelector(turn))];
 }
 
+/** 本 turn 全部成员行 wrapper（含已 hidden 的，供清理钉住样式）。 */
+export function allProcessRowsSelector(turn: number): string {
+  return `[data-chat-turn="${turn}"][data-turn-process-member]`;
+}
+
+/**
+ * 清理收起终态钉住的成员行样式。兜底路径专用：flip 之后的正常路径 settle
+ * 时行已 hidden、直接清理，不走这里。在官方 hidden 落地后的宏任务里由视
+ * 图调用；不筛选 hidden——钉住窗口期行尚未挂 hidden，必须能命中。
+ */
+export function clearPinnedRows(turn: number, barRoot: HTMLElement): void {
+  const column = barRoot.closest('[data-chat-flow-key]')?.parentElement;
+  if (column === null || column === undefined) return;
+  for (const el of column.querySelectorAll<HTMLElement>(allProcessRowsSelector(turn))) {
+    clearRowInline(el);
+  }
+}
+
+function clearRowInline(el: HTMLElement): void {
+  el.classList.remove('dsh-tf-animating');
+  el.style.height = '';
+  el.style.marginTop = '';
+  el.style.marginBottom = '';
+  el.style.opacity = '';
+  el.style.overflow = '';
+}
+
 export type FoldDirection = 'expand' | 'collapse';
 
-/** 单行动画需要的几何量（height 用 border-box 总高，与内联 height 语义一致）。 */
+/** 单行动画需要的几何量（height/margin 用 border-box 与 computed 像素值）。 */
 export interface RowMeasure {
   readonly height: number;
   readonly marginTop: number;
+}
+
+/**
+ * 伴生行的几何：在成员行 height/marginTop 之外还允许带 marginBottom
+ * （折叠条自身的 closed 态补偿量）。
+ */
+export interface CompanionGeometry extends RowMeasure {
+  readonly marginBottom?: number;
+}
+
+/**
+ * 一条动画目标。member 行的 from/to 由测量阶段推导（expand 0→自然高、
+ * collapse 自然高→0），传入时省略；companion 行由视图在启动前实测
+ * from/to——实测而非硬编码，官方值变化时自动跟随。
+ */
+export interface FoldRowPlan {
+  readonly el: HTMLElement;
+  readonly role: 'member' | 'companion';
+  readonly from?: CompanionGeometry;
+  readonly to?: CompanionGeometry;
 }
 
 export interface FoldAnimateDeps {
@@ -59,6 +124,7 @@ export interface FoldAnimateDeps {
   readonly animate: (el: HTMLElement, frames: Keyframe[], options: KeyframeAnimationOptions) => {
     readonly finished: Promise<unknown>;
     cancel(): void;
+    reverse(): void;
   };
 }
 
@@ -73,7 +139,7 @@ export interface FoldAnimateDeps {
  * setTimeout 轮询——预压后行高为 0，测量改走「临时解除 height 约束 → 读 →
  * 立即写回」。`isStale` 供测量中途 reverse/cancel/finish 时作废未决的调度
  * （否则旧回调会再次预压/挂轮询，留下无人清理的预压样式）。仍测不到就放弃，
- * 绝不把 0 当目标。
+ * 绝不把 0 当目标。伴生行几何由视图实测传入，不参与该测量。
  */
 function measureWhenReady(
   rows: readonly HTMLElement[],
@@ -165,8 +231,16 @@ const browserDeps: FoldAnimateDeps = {
 };
 
 export interface FoldAnimationHandle {
+  /** 是否仍在测量或播放；同步降级返回的 handle 从一开始就是 false。 */
+  readonly active: boolean;
   /** 当前动画方向（reverse 时翻转）；视图由此推导反转目标，无需平行记账。 */
   readonly direction: FoldDirection;
+  /**
+   * collapse 主动画的 `onFlip`（提前 setOpen(false)）是否已触发。视图在
+   * flip 后反转回 expand 时必须补 `setOpen(true)`——flip 已把官方 open 翻
+   * 成 false，反转的 onDone 只靠方向判断会漏翻。
+   */
+  readonly flipFired: boolean;
   /**
    * 反转方向（动画进行中再次点击折叠条）。行保持在动画态，WAAPI 动画从
    * 当前值平滑过渡到新目标；完成回调替换为 `onDone`。
@@ -181,25 +255,51 @@ export interface FoldAnimationHandle {
 }
 
 const DURATION_MS = 220;
+/**
+ * open 翻转（flip）提前量：主动画剩这么多毫秒时触发 onFlip。足够晚——
+ * 成员行 opacity 已衰减到接近 0，hidden 挂上无可感突变；也足够早——提交
+ * 落地后仍有一段动画窗口消化 answer 形态切换。
+ */
+const FLIP_LEAD_MS = 70;
+/** flip 落地后 answer 形态差的追赶动画时长。 */
+const CATCH_UP_MS = 140;
+
+export interface FoldAnimateOptions {
+  /**
+   * collapse 专用：主动画剩 `FLIP_LEAD_MS` 时触发一次（视图借此把
+   * `setOpen(false)` 提前到动画尾段，官方提交的伴生几何全部落在动画窗
+   * 口内）。幂等回调，settle 时若尚未触发会补发一次。
+   */
+  readonly onFlip?: () => void;
+}
 
 /**
- * 对成员行执行一次高度过渡（测量的时序策略与 WAAPI 选型理由见文件头）：
- * 展开方向微任务首测、失败预压 0 后轮询至多 3 次总机会，收起方向首帧同步；
- * 就绪后用 el.animate 驱动 height/margin-top/opacity 过渡。`rows` 为空或
- * 用户偏好减少动效时立即完成（不写任何样式）。同一时刻一个 turn 只应有一
- * 个动画——再次交互由调用方通过 `reverse` 处理。测量不到自然高时放弃动画
- * （回退官方瞬间切换），绝不把 0 当目标（0→0 无过渡 = 内容消失）。
+ * 对成员行 + 伴生行执行一次高度过渡（测量的时序策略与 WAAPI 选型理由见
+ * 文件头）：就绪后用 el.animate 驱动 height/margin/opacity 过渡。
+ * `plans` 为空或用户偏好减少动效时立即完成（不写任何样式）。同一时刻一
+ * 个 turn 只应有一个动画——再次交互由调用方通过 `reverse` 处理。测量不到
+ * 自然高时放弃动画（回退官方瞬间切换），绝不把 0 当目标（0→0 无过渡 =
+ * 内容消失）。
  */
 export function animateFoldRows(
-  rows: readonly HTMLElement[],
+  plans: readonly FoldRowPlan[],
   direction: FoldDirection,
   onDone: () => void,
+  options: FoldAnimateOptions = {},
   deps: FoldAnimateDeps = browserDeps,
 ): FoldAnimationHandle {
-  if (rows.length === 0 || deps.reducedMotion()) {
+  const members = plans.filter((plan) => plan.role === 'member');
+  const companions = plans.filter(
+    (plan): plan is FoldRowPlan & { from: CompanionGeometry; to: CompanionGeometry } =>
+      plan.role === 'companion' && plan.from !== undefined && plan.to !== undefined,
+  );
+  const memberRows = members.map((plan) => plan.el);
+  if (memberRows.length === 0 || deps.reducedMotion()) {
     onDone();
     return {
+      get active() { return false; },
       get direction() { return direction; },
+      get flipFired() { return false; },
       reverse() { return false; },
       cancel() { /* 无痕迹 */ },
     };
@@ -210,20 +310,31 @@ export function animateFoldRows(
   let done = onDone;
   const animations = new Map<HTMLElement, ReturnType<FoldAnimateDeps['animate']>>();
   let timeout: unknown;
+  let flipTimer: unknown;
+  let flipFired = false;
+  let animationGeneration = 0;
+  let phase: 'measuring' | 'animating' = 'measuring';
+  let currentMeasures: RowMeasure[] | undefined;
+  let measureGeneration = 0;
 
-  const clearStyles = (): void => {
-    for (const el of rows) {
-      el.classList.remove('dsh-tf-animating');
-      el.style.height = '';
-      el.style.marginTop = '';
-      el.style.opacity = '';
-      el.style.overflow = '';
+  const clearMemberStyles = (el: HTMLElement): void => {
+    clearRowInline(el);
+  };
+
+  const clearAllStyles = (): void => {
+    for (const el of memberRows) clearMemberStyles(el);
+    for (const plan of companions) {
+      plan.el.classList.remove('dsh-tf-animating');
+      plan.el.style.height = '';
+      plan.el.style.marginTop = '';
+      plan.el.style.marginBottom = '';
+      plan.el.style.overflow = '';
     }
   };
 
   /** 展开首测失败的预压：与展开动画起点一致的 0 高隐身态（防闪现）。 */
   const presetZero = (): void => {
-    for (const el of rows) {
+    for (const el of memberRows) {
       el.classList.add('dsh-tf-animating');
       el.style.overflow = 'hidden';
       el.style.height = '0px';
@@ -232,91 +343,206 @@ export function animateFoldRows(
     }
   };
 
-  /** 取消全部行动画与兜底 timeout（settle / reverse / cancel 共用）。 */
-  const teardown = (): void => {
+  const cancelFallback = (): void => {
+    if (timeout === undefined) return;
+    deps.cancelTimeout(timeout);
+    timeout = undefined;
+  };
+
+  const cancelFlipTimer = (): void => {
+    if (flipTimer === undefined) return;
+    deps.cancelTimeout(flipTimer);
+    flipTimer = undefined;
+  };
+
+  const fireFlip = (): void => {
+    if (flipFired || finished || options.onFlip === undefined) return;
+    flipFired = true;
+    cancelFlipTimer();
+    options.onFlip();
+  };
+
+  const armFlip = (delayMs: number): void => {
+    if (options.onFlip === undefined || direction_ !== 'collapse' || flipFired) return;
+    cancelFlipTimer();
+    flipTimer = deps.scheduleTimeout(() => {
+      flipTimer = undefined;
+      fireFlip();
+    }, delayMs);
+  };
+
+  const cancelAnimations = (): void => {
     for (const anim of animations.values()) anim.cancel();
     animations.clear();
-    if (timeout !== undefined) deps.cancelTimeout(timeout);
+  };
+
+  /**
+   * 把指定行的「底层指定样式」先写成当前方向的终态。WAAPI effect 只在
+   * 上面覆盖视觉插值；任一行动画提前结束、被替换或被浏览器移除时，露出的
+   * 仍是终态，不会恢复起点高度并带动后续元素抽动。伴生行不碰 opacity
+   * （它们全程可见，只有几何参与过渡）。
+   */
+  const applyTerminalRow = (
+    el: HTMLElement,
+    target: FoldDirection,
+    geometry?: CompanionGeometry,
+  ): void => {
+    if (geometry !== undefined) {
+      el.classList.add('dsh-tf-animating');
+      el.style.overflow = 'hidden';
+      el.style.height = `${geometry.height}px`;
+      el.style.marginTop = `${geometry.marginTop}px`;
+      if (geometry.marginBottom !== undefined) el.style.marginBottom = `${geometry.marginBottom}px`;
+      return;
+    }
+    const index = memberRows.indexOf(el);
+    const measure = index < 0 ? undefined : currentMeasures?.[index];
+    if (measure === undefined) return;
+    el.classList.add('dsh-tf-animating');
+    el.style.overflow = 'hidden';
+    if (target === 'collapse') {
+      el.style.height = '0px';
+      el.style.marginTop = '0px';
+      el.style.opacity = '0';
+      return;
+    }
+    el.style.height = `${measure.height}px`;
+    el.style.marginTop = `${measure.marginTop}px`;
+    el.style.opacity = '1';
+  };
+
+  const applyTerminalStyles = (target: FoldDirection): void => {
+    if (currentMeasures !== undefined) {
+      for (const el of memberRows) applyTerminalRow(el, target);
+    }
+    for (const plan of companions) applyTerminalRow(plan.el, target, plan.to);
   };
 
   const settle = (): void => {
     if (finished) return;
+    // collapse 的 onFlip 兜底：flip 定时器没来得及触发（异常调度）也要保
+    // 证 open 终态翻转。幂等回调，重复调用无害。fireFlip 自带 finished
+    // 守卫，必须在置位前调用。
+    if (direction_ === 'collapse' && options.onFlip !== undefined) fireFlip();
     finished = true;
-    teardown();
-    clearStyles();
+    measureGeneration += 1;
+    animationGeneration += 1;
+    cancelFallback();
+    cancelFlipTimer();
+    // 先把底层同步落到终态，再 cancel 临时 fill effect；两步处于同一同步块，
+    // 浏览器没有机会画出动画起点或中间值。
+    applyTerminalStyles(direction_);
+    cancelAnimations();
+    // 展开终态交还自然布局。收起终态：flip 已触发（正常路径）则官方
+    // hidden 已落地，直接清样式不闪现；仅当 hidden 未落地（极端慢提交）
+    // 时钉住 0 高，交由视图的 clearPinnedRows 宏任务兜底清理。
+    if (direction_ === 'expand' || memberRows.every((el) => el.hasAttribute('hidden'))) {
+      clearAllStyles();
+    } else {
+      presetZero();
+    }
     done();
   };
 
+  const watchAnimations = (): void => {
+    const myGeneration = ++animationGeneration;
+    const target = direction_;
+    let remaining = animations.size;
+    if (remaining === 0) {
+      settle();
+      return;
+    }
+    const completeTarget = (el: HTMLElement): void => {
+      if (finished || myGeneration !== animationGeneration) return;
+      // 每个成员各自完成时立即确认终态；不等待最后一个，杜绝错帧完成窗口。
+      const companion = companions.find((plan) => plan.el === el);
+      applyTerminalRow(el, target, companion?.to);
+      remaining -= 1;
+      if (remaining === 0) settle();
+    };
+    for (const [el, anim] of animations) {
+      void anim.finished.then(
+        () => completeTarget(el),
+        // 浏览器外部取消同样安全落到终态；其他行继续，不把整组提前截断。
+        () => completeTarget(el),
+      );
+    }
+    cancelFallback();
+    timeout = deps.scheduleTimeout(() => {
+      if (!finished && myGeneration === animationGeneration) settle();
+    }, DURATION_MS + 500);
+  };
+
   const runAnimation = (measures: RowMeasure[]): void => {
-    for (let i = 0; i < rows.length; i += 1) {
-      const el = rows[i];
+    currentMeasures = measures;
+    phase = 'animating';
+    applyTerminalStyles(direction_);
+    const animationOptions: KeyframeAnimationOptions = {
+      duration: DURATION_MS,
+      easing: 'cubic-bezier(0.2, 0, 0, 1)',
+      // 临时 fill 覆盖 pending/错帧完成；整组 settle 时同步 cancel，不会
+      // 留下长期 filling animation 或压住后续指定样式。
+      fill: 'both',
+    };
+    const startAnimation = (
+      el: HTMLElement,
+      from: CompanionGeometry,
+      to: CompanionGeometry,
+      withOpacity: boolean,
+    ): void => {
+      const expand = direction_ === 'expand';
+      const first: Keyframe = { height: `${from.height}px`, marginTop: `${from.marginTop}px` };
+      const last: Keyframe = { height: `${to.height}px`, marginTop: `${to.marginTop}px` };
+      if (from.marginBottom !== undefined) first.marginBottom = `${from.marginBottom}px`;
+      if (to.marginBottom !== undefined) last.marginBottom = `${to.marginBottom}px`;
+      if (withOpacity) {
+        first.opacity = expand ? '0' : '1';
+        last.opacity = expand ? '1' : '0';
+      }
+      const anim = deps.animate(el, [first, last], animationOptions);
+      animations.set(el, anim);
+    };
+    for (let i = 0; i < memberRows.length; i += 1) {
+      const el = memberRows[i];
       const m = measures[i];
       if (el === undefined || m === undefined) continue;
-      el.classList.add('dsh-tf-animating');
-      el.style.overflow = 'hidden';
       const expand = direction_ === 'expand';
-      const fromHeight = expand ? 0 : m.height;
-      const toHeight = expand ? m.height : 0;
-      const fromMargin = expand ? 0 : m.marginTop;
-      const toMargin = expand ? m.marginTop : 0;
-      // 展开淡入（0→1）、收起淡出（1→0）：动画全程内容可见性连续过渡，
-      // 结束时与无约束的稳态值一致，settle 清样式不产生跳变。
-      const fromOpacity = expand ? '0' : '1';
-      const toOpacity = expand ? '1' : '0';
-      // 先把起点值落到内联样式（无过渡，WAAPI 接管后续），确保收起方向
-      // 起点 = 自然高（内容先保持可见再收起）。
-      el.style.height = `${fromHeight}px`;
-      el.style.marginTop = `${fromMargin}px`;
-      el.style.opacity = fromOpacity;
-      const anim = deps.animate(el, [
-        { height: `${fromHeight}px`, marginTop: `${fromMargin}px`, opacity: fromOpacity },
-        { height: `${toHeight}px`, marginTop: `${toMargin}px`, opacity: toOpacity },
-      ], { duration: DURATION_MS, easing: 'cubic-bezier(0.2, 0, 0, 1)' });
-      animations.set(el, anim);
-      void anim.finished.then(() => {
-        if (finished) return;
-        animations.delete(el);
-        if (animations.size === 0) settle();
-      }).catch(() => {
-        // cancelled：本代码 cancel/reverse 会先置 finished，这里的 reject 是
-        // 浏览器外部取消（如行脱离文档）——立即 settle 恢复布局，不等兜底
-        // timeout（否则展开方向内联起点 = 隐身态，内容不可见至 720ms）。
-        if (!finished) settle();
-      });
+      // 展开淡入（0→1）、收起淡出（1→0）：动画全程内容可见性连续过渡。
+      startAnimation(
+        el,
+        { height: expand ? 0 : m.height, marginTop: expand ? 0 : m.marginTop },
+        { height: expand ? m.height : 0, marginTop: expand ? m.marginTop : 0 },
+        true,
+      );
     }
-    // 兜底 timeout 覆盖异常场景（动画被浏览器中止但 finished 未 resolve）。
-    timeout = deps.scheduleTimeout(settle, DURATION_MS + 500);
+    for (const plan of companions) startAnimation(plan.el, plan.from, plan.to, false);
+    if (direction_ === 'collapse') armFlip(DURATION_MS - FLIP_LEAD_MS);
+    watchAnimations();
   };
 
   // —— 状态机：measuring（等自然高就绪）→ animating（过渡中），settle 即终 ——
   // reverse 在 measuring 阶段重新测量（方向已变，旧轮询的 natural 缓存
   // 无效）：generation 递增，旧测量回调检测到变化即放弃。
-  let phase: 'measuring' | 'animating' = 'measuring';
-  let currentMeasures: RowMeasure[] | undefined;
-  let generation = 0;
-
   const begin = (): void => {
-    const myGeneration = generation;
+    const myGeneration = measureGeneration;
     // 测量阶段的兜底由 measureWhenReady 自带（展开微任务首测失败预压后
     // 轮询至多 3 次总机会后 resolve([])，收起首帧失败返回 undefined）——
     // 不再额外挂 timeout，避免与轮询在假时序里互相覆盖。isStale 纳入
     // finished：cancel（即使发生在首测微任务执行前）后旧回调不得再预压。
-    const stale = (): boolean => finished || myGeneration !== generation;
-    const readyPromise = measureWhenReady(rows, direction_, deps, presetZero, stale);
+    const stale = (): boolean => finished || myGeneration !== measureGeneration;
+    const readyPromise = measureWhenReady(memberRows, direction_, deps, presetZero, stale);
     if (readyPromise === undefined) {
       // 收起方向首帧测不到自然高：行不可见/未物化，放弃动画走官方瞬间切换。
       settle();
       return;
     }
     void readyPromise.then((measures) => {
-      if (finished || myGeneration !== generation) return;
+      if (finished || myGeneration !== measureGeneration) return;
       if (measures.length === 0) {
         settle(); // 展开方向 3 次仍测不到（隐藏行/内容异步）：放弃动画。
         return;
       }
       if (phase !== 'measuring') return;
-      currentMeasures = measures;
-      phase = 'animating';
       runAnimation(measures);
     });
   };
@@ -324,8 +550,14 @@ export function animateFoldRows(
   begin();
 
   return {
+    get active(): boolean {
+      return !finished;
+    },
     get direction(): FoldDirection {
       return direction_;
+    },
+    get flipFired(): boolean {
+      return flipFired;
     },
     reverse(nextDone: () => void): boolean {
       if (finished) {
@@ -339,8 +571,8 @@ export function animateFoldRows(
         // 首测失败后的预压态行被压 0，收起方向同步测量会得 0 高——先解除
         // 预压恢复自然布局再重测。begin 内可能同步 settle（收起首帧测不
         // 到即放弃），以 finished 区分「仍活跃」与「已终止」。
-        generation += 1;
-        clearStyles();
+        measureGeneration += 1;
+        clearAllStyles();
         begin();
         return !finished;
       }
@@ -350,16 +582,62 @@ export function animateFoldRows(
         settle();
         return false;
       }
-      // 动画进行中反转：取消旧动画，从当前值过渡到新方向目标。
-      teardown();
-      runAnimation(currentMeasures);
+      // 动画进行中反转：保留同一批 WAAPI player 的当前进度，底层指定样式
+      // 先切到新终态，再原地 reverse；取消重建会从端点重播并产生跳变。
+      // flip 语义跟随新方向：反转成 collapse（此前是展开、flip 从未触发）
+      // 重新武装一个短延迟 flip；反转成 expand 则撤掉未触发的 flip（open
+      // 本就为 true）。flip 已触发过的情况由视图在 onDone 里补翻 open。
+      cancelFlipTimer();
+      animationGeneration += 1;
+      cancelFallback();
+      applyTerminalStyles(direction_);
+      try {
+        for (const anim of animations.values()) anim.reverse();
+      } catch {
+        // timeline 不可用等极端环境下稳定优先：同步落新终态并结束本组。
+        settle();
+        return false;
+      }
+      if (direction_ === 'collapse' && !flipFired) armFlip(FLIP_LEAD_MS);
+      watchAnimations();
       return true;
     },
     cancel(): void {
       if (finished) return;
       finished = true;
-      teardown();
-      clearStyles();
+      measureGeneration += 1;
+      animationGeneration += 1;
+      cancelFallback();
+      cancelFlipTimer();
+      cancelAnimations();
+      clearAllStyles();
     },
   };
+}
+
+/**
+ * flip 落地后的 answer 形态追赶：官方提交把 answer 行重渲染成 compact 形态
+ * （高度差来自 React 内容，动画前测不到），此函数从 flip 前实测高度平滑过
+ * 渡到提交后的当前实测高度。在视图的 open 翻 false layout effect 里同步调
+ * 用（paint 前），`fill: both` 覆盖官方新值避免突变帧；动画结束自然释放回
+ * 官方值。高度无差（未变化/已一致）则不启动。
+ */
+export function animateCompanionCatchUp(
+  el: HTMLElement,
+  fromHeight: number,
+  deps: Pick<FoldAnimateDeps, 'animate'> = browserDeps,
+): void {
+  const toHeight = el.offsetHeight;
+  if (Math.abs(toHeight - fromHeight) < 1) return;
+  const anim = deps.animate(
+    el,
+    [
+      { height: `${fromHeight}px` },
+      { height: `${toHeight}px` },
+    ],
+    { duration: CATCH_UP_MS, easing: 'cubic-bezier(0.2, 0, 0, 1)', fill: 'both' },
+  );
+  // 终帧与官方值一致：结束后取消 fill effect 交还官方样式（释放瞬间无
+  // 视觉差），避免长期 fill 压住后续官方提交。
+  void anim.finished.then(() => anim.cancel(), () => { /* 外部取消即已释放 */ });
 }
